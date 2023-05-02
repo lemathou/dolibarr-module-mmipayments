@@ -123,7 +123,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 				array('type' => 'other', 'name' => 'comment', 'label' => $langs->trans("Comment"), 'value' => '<textarea name="comment" style="width: 90%;height: 3em;margin-top: 0.5em;"></textarea>'),
 			);
 	
-			if (false && !empty($conf->notification->enabled)) {
+			if (!empty($conf->MMIPAYMENTS_FORM_CONFIRM_NOTIF) && !empty($conf->notification->enabled)) {
 				require_once DOL_DOCUMENT_ROOT.'/core/class/notify.class.php';
 				$notify = new Notify($this->db);
 				$formquestion = array_merge($formquestion, array(

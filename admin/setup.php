@@ -28,6 +28,7 @@ require_once "../main_load.inc.php";
 
 $arrayofparameters = array(
 	'MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN'=>array('type'=>'yesno', 'enabled'=>1),
+	//'MMIPAYMENTS_FORM_CONFIRM_NOTIF'=>array('type'=>'yesno', 'enabled'=>1),
 );
 
 require_once('../../mmicommon/admin/mmisetup_1.inc.php');

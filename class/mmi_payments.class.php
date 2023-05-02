@@ -288,7 +288,9 @@ class mmi_payments
 		$paiement->note_private = $infos['note'];
 
 		if (!($paiement_id = $paiement->create($user))) {
+			// @todo Notify
 			var_dump($paiement_id);
+			echo 'Erreur création paiement';
 			return;
 		}
 		//var_dump($paiement_id);
@@ -310,13 +312,19 @@ class mmi_payments
 			if (!isset($infos['chqbank']))
 				$infos['chqbank'] = '';
 
+			// @todo encode strings protection injection !
 			$sql = "INSERT INTO `".MAIN_DB_PREFIX."paiement_extrafields`
 				(`fk_object`, `fk_module_oid`, `fk_bank_account`, `chqemetteur`, `chqbank`)
 				VALUES (".$paiement_id.", ".(!empty($infos['module_oid']) ?"'".$infos['module_oid']."'" :'NULL').", '".$infos['accountid']."', '".$infos['chqemetteur']."', '".$infos['chqbank']."')";
 			//echo $sql;
 			$db->query($sql);
+
+			// If propal validated or unsigned, set Signed
+			if ($objecttype=='Propal' && in_array($object->status, [Propal::STATUS_VALIDATED, Propal::STATUS_NOTSIGNED])) {
+				$object->closeProposal($user, propal::STATUS_SIGNED, 'Payment done');
+			}
 	
-			// Assign to invoice
+			// Assign to invoice if only one
 			$object->fetchObjectLinked();
 			if(!empty($object->linkedObjectsIds) && !empty($object->linkedObjectsIds['facture']) && count($object->linkedObjectsIds['facture'])==1) {
 				foreach($object->linkedObjectsIds['facture'] as $invoice_id) {
@@ -334,6 +342,7 @@ class mmi_payments
 			// RESTE A PAYER
 			$resteapayer = price2num($totalttc - $dejaregle);
 			if (round($resteapayer, 2) == 0) {
+				// Volontairement pas mis <= 0 pour que l'on traite manuellement les situations de trop perçu
 				// FACTURE DECLAREE PAYEE
 				$object->setPaid($user);
 			}
