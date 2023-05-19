@@ -25,10 +25,31 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 
 		// Facture
 		if ($this->in_context($parameters, 'invoicecard')) {
-			if (! $conf->global->MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN)
-				return 0;
-			$link = '?facid='.$object->id.'&action=payment_assign';
-			echo "<a class='butAction' href='".$link."'>".$langs->trans("MMIPaymentsAssign")."</a>";
+			if (!empty($conf->global->MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN)) {
+				$link = '?facid='.$object->id.'&action=payment_assign';
+				echo "<a class='butAction' href='".$link."'>".$langs->trans("MMIPaymentsAssign")."</a>";
+			}
+
+			if (!empty($conf->global->MMIPAYMENTS_INVOICE_PAYMENT_CHANGE_AMOUNT)) {
+				echo '<script>
+				$(document).ready(function(){
+					var onlinepaymenturlval = $("#onlinepaymenturl").val();
+					$("#onlinepaymenturl").data("orig", onlinepaymenturlval);
+					$("#onlinepaymenturl").parent().append("<p>Spécifier un montant si besoin (sinon solde) : <input id=\"onlinepaymenturlamount\" size=\"8\" /> <input type=\"button\" value=\"Mettre à jour l\'url de paiement\" onclick=\"onlinepaymenturlupdate();\" /></p>");
+				});
+
+				function onlinepaymenturlupdate()
+				{
+					var onlinepaymenturlval = $("#onlinepaymenturl").data("orig");
+					var amount = $("#onlinepaymenturlamount").val();
+					var url = amount != "" ?onlinepaymenturlval+"&amount="+amount :onlinepaymenturlval;
+					//alert(onlinepaymenturlval);
+					//alert(url);
+					$("#onlinepaymenturl").val(url);
+					$("#onlinepaymenturl").parent().find("a").attr("href", url);
+				}
+				</script>';
+			}
 
 			return 0;
 		}

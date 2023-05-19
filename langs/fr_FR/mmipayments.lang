@@ -33,6 +33,7 @@ MMIPAYMENTS_MYPARAM1Tooltip = My param 1 tooltip
 MMIPAYMENTS_MYPARAM2=My param 2
 MMIPAYMENTS_MYPARAM2Tooltip=My param 2 tooltip
 MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN=Bouton assigner les paiements de la commande sur la facture
+MMIPAYMENTS_INVOICE_PAYMENT_CHANGE_AMOUNT = Possibilité de modifier le montant du règlement sur un lien de paiement
 
 #
 # About page
