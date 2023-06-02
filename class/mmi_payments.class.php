@@ -246,7 +246,9 @@ class mmi_payments
 				$q2 = $db->query($sql);
 				if ($q2 && ($row = $q2->fetch_object())) {
 					//var_dump($row->paid, $object->total_ttc);
-					if (round($row->paid-$object->total_ttc, 2) >= 0) {
+					// @todo : voir côté doli standard en prenant en compte les avoirs, etc.
+					//   une méthode existe déjà voir dans paiement::create
+					if (round($row->paid-$object->total_ttc, 2) == 0) {
 						//var_dump($object);
 						$object->setPaid($user);
 					}
