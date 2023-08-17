@@ -300,24 +300,25 @@ class mmi_payments
 
 		$object = static::loadobject($objecttype, $id);
 
+		if (!isset($infos['accountid']))
+			$infos['accountid'] = 1; // @todo vérif : Compte bancaire par défaut ?
+		if (!isset($infos['chqemetteur']))
+			$infos['chqemetteur'] = '';
+		if (!isset($infos['chqbank']))
+			$infos['chqbank'] = '';
+
+		// @todo encode strings protection injection !
+		$sql = "INSERT INTO `".MAIN_DB_PREFIX."paiement_extrafields`
+			(`fk_object`, `fk_module_oid`, `fk_bank_account`, `chqemetteur`, `chqbank`)
+			VALUES (".$paiement_id.", ".(!empty($infos['module_oid']) ?"'".$infos['module_oid']."'" :'NULL').", '".$infos['accountid']."', '".$infos['chqemetteur']."', '".$infos['chqbank']."')";
+		//echo $sql;
+		$db->query($sql);
+
 		if(in_array($objecttype, ['Propal', 'Commande'])) {
+			// Spécifique association devis/commande
 			$sql = "INSERT INTO `".MAIN_DB_PREFIX."paiement_object`
 				(`fk_paiement`, `objecttype`, `fk_object`, `amount`, `multicurrency_code`, `multicurrency_tx`, `multicurrency_amount`)
 				VALUES (".$paiement_id.", '".$objecttype."', ".$id.", ".$paiement->amount.", NULL, 1, ".$paiement->amount.")";
-			//echo $sql;
-			$db->query($sql);
-
-			if (!isset($infos['accountid']))
-				$infos['accountid'] = 1; // @todo vérif : Compte bancaire par défaut ?
-			if (!isset($infos['chqemetteur']))
-				$infos['chqemetteur'] = '';
-			if (!isset($infos['chqbank']))
-				$infos['chqbank'] = '';
-
-			// @todo encode strings protection injection !
-			$sql = "INSERT INTO `".MAIN_DB_PREFIX."paiement_extrafields`
-				(`fk_object`, `fk_module_oid`, `fk_bank_account`, `chqemetteur`, `chqbank`)
-				VALUES (".$paiement_id.", ".(!empty($infos['module_oid']) ?"'".$infos['module_oid']."'" :'NULL').", '".$infos['accountid']."', '".$infos['chqemetteur']."', '".$infos['chqbank']."')";
 			//echo $sql;
 			$db->query($sql);
 
@@ -337,12 +338,36 @@ class mmi_payments
 			}
 		}
 		elseif ($objecttype=='Facture') {
-			// @todo associer à facture !
-			$totalttc = $infos['amount']; // TOTAL TTC
+			$sql = "INSERT INTO ".MAIN_DB_PREFIX."paiement_facture (fk_facture, fk_paiement, amount, multicurrency_amount)";
+			$sql .= " VALUES (".$object->id.", ".$paiement_id.", ".$paiement->amount.", ".$paiement->amount.")";
+			//echo $sql;
+			$db->query($sql);
+
+			// Re-fetchg
+			$paiement->fetch($paiement_id);
+			$paiement->amounts = $paiement->getAmountsArray();
+			$paiement->multicurrency_amounts = $paiement->amounts;
+			$paiement->paiementid = ($paiement->type_code ?$paiement->type_code :'OTHER');
+			//var_dump($paiement);
+			
+			$label = ($paiement->amount>0 ?'(CustomerInvoicePayment)' :'(CustomerInvoicePaymentBack)');
+			$account_id = $infos['accountid'];
+			$chqemetteur = $infos['chqemetteur'];
+			$chqbank = $infos['chqbank'];
+			
+			if (empty($account_id))
+				$account_id = 1;
+			if (empty($chqemetteur))
+				$chqemetteur = $client->nom;
+			if (empty($chqbank))
+				$chqbank = '';
+
+			$result = $paiement->addPaymentToBank($user, 'payment', $label, $account_id, $chqemetteur, $chqbank);
+
 			// DEJA REGLE
 			$dejaregle = $object->getSommePaiement(($conf->multicurrency->enabled && $object->multicurrency_tx != 1) ? 1 : 0);
 			// RESTE A PAYER
-			$resteapayer = price2num($totalttc - $dejaregle);
+			$resteapayer = price2num($paiement->amount - $dejaregle);
 			if (round($resteapayer, 2) == 0) {
 				// Volontairement pas mis <= 0 pour que l'on traite manuellement les situations de trop perçu
 				// FACTURE DECLAREE PAYEE
