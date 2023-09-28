@@ -117,9 +117,12 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			$object_class = get_class($object);
 			$paiement_id = mmi_payments::add($object_class, $object->id, $infos);
 			if (!empty($paiement_id) && $object_class=='Commande') {
+				// Auto create shipping on payment
 				// @todo use trigger PAYMENT_CUSTOMER_CREATE on module MMI_WORKFLOW
-				$thirdparty = $object->thirdparty;
-				if (!empty($conf->global->MMIPAYMENTS_CAISSE_COMPANY) && $conf->global->MMIPAYMENTS_CAISSE_COMPANY==$thirdparty->id) {
+				if (
+					(!empty($conf->global->MMIPAYMENTS_CAISSE_USER) && $conf->global->MMIPAYMENTS_CAISSE_USER==$user->id)
+					|| (!empty($conf->global->MMIPAYMENTS_CAISSE_COMPANY) && $conf->global->MMIPAYMENTS_CAISSE_COMPANY==$object->thirdparty->id)
+				) {
 					// Validation auto expé
 					if (true) {
 						dol_include_once('custom/sfycustom/class/mmi_workflow.class.php');
