@@ -259,7 +259,7 @@ class mmi_payments
 
 	public static function add($objecttype, $id, $infos)
 	{
-		global $db, $user;
+		global $db, $user, $hookmanager;
 
 		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 		require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';

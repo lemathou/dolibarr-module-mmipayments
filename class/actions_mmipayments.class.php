@@ -24,7 +24,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		}
 
 		// Facture
-		if ($this->in_context($parameters, 'invoicecard')) {
+		if ($this->in_context($parameters, 'invoicecard') && $object->statut>0) {
 			if (!empty($conf->global->MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN)) {
 				if ($object->type == 0) {
 					$link = '?facid='.$object->id.'&action=payment_assign';
@@ -60,7 +60,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		}
 
 		// Devis/Commande
-		if ($this->in_context($parameters, ['propalcard', 'ordercard'])) {
+		if ($this->in_context($parameters, ['propalcard', 'ordercard']) && $object->statut>0) {
 			//echo '<div style="text-align: left;">'; var_dump($object); echo '</div>';
 			// Rechercher si facture associée
 			$fact_id = null;
@@ -95,11 +95,11 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 
 	function doActions($parameters, &$object, &$action, $hookmanager)
 	{
+		global $user, $conf;
 
 		if ($this->in_context($parameters, 'invoicecard') && $action=='payment_assign') {
 			mmi_payments::invoice_autoassign_payments($object);
 		}
-
 
 		if ($this->in_context($parameters, ['propalcard', 'ordercard']) && $action=='confirm_payment_add') {
 			//var_dump($_POST);
@@ -115,7 +115,18 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			];
 			//var_dump($infos);
 			$object_class = get_class($object);
-			mmi_payments::add($object_class, $object->id, $infos);
+			$paiement_id = mmi_payments::add($object_class, $object->id, $infos);
+			if (!empty($paiement_id) && $object_class=='Commande') {
+				// @todo use trigger PAYMENT_CUSTOMER_CREATE on module MMI_WORKFLOW
+				$thirdparty = $object->thirdparty;
+				if (!empty($conf->global->MMIPAYMENTS_CAISSE_COMPANY) && $conf->global->MMIPAYMENTS_CAISSE_COMPANY==$thirdparty->id) {
+					// Validation auto expé
+					if (true) {
+						dol_include_once('custom/sfycustom/class/mmi_workflow.class.php');
+						mmi_workflow::order_1clic_shipping($user, $object);
+					}
+				}
+			}
 			header('Location: /'.($object_class=='Commande' ?'commande' :'comm/propal').'/card.php?id='.$object->id);
 		}
 
@@ -132,16 +143,18 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			// Hack MOyens de paiement
 			echo '<style type="text/css">.selectpaymenttypes { width: 150px; }</style>';
 			ob_start();
-			$form->select_types_paiements('', 'paiementcode', '', 0);
+			$form->select_types_paiements($conf->global->MMIPAYMENTS_DEFAULT_MODE, 'paiementcode', '', 0);
 			$paiementcode = ob_get_contents();
 			ob_end_clean();
 			// Comptes
-			$accounts = $form->select_comptes('', 'accountid', 0, '', 2, '', 0, '', 1);
+			$accounts = $form->select_comptes($conf->global->MMIPAYMENTS_DEFAULT_ACCOUNT, 'accountid', 0, '', 2, '', 0, '', 1);
+
+			//var_dump($object->thirdparty);
 
 			$formquestion = array(
-				array('type' => 'date', 'name' => 'datepayment', 'label' => '<span class="fieldrequired">'.$langs->trans("Date").'</span>'),
+				array('type' => 'date', 'name' => 'datepayment', 'label' => '<span class="fieldrequired">'.$langs->trans("Date").'</span>', 'value'=>date('Y-m-d')),
 				array('type' => 'other', 'name' => 'paiementcode', 'label' => $langs->trans("PaymentMode"), 'value' => $paiementcode),
-				array('type' => 'text', 'name' => 'amount', 'label' => $langs->trans("PaymentAmount"), 'value' => ''),
+				array('type' => 'text', 'name' => 'amount', 'label' => $langs->trans("PaymentAmount"), 'value' => $object->total_ttc),
 				array('type' => 'other', 'name' => 'accountid', 'label' => $langs->trans("AccountToCredit"), 'value' => $accounts),
 				array('type' => 'text', 'name' => 'paymentnum', 'label' => $langs->trans("ChequeOrTransferNumber"), 'value' => ''),
 				array('type' => 'text', 'name' => 'chqemetteur', 'label' => $langs->trans("CheckTransmitter"), 'value' => ''),
@@ -157,7 +170,9 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 				));
 			}
 	
-			$formconfirm = $form->formconfirm($_SERVER["PHP_SELF"].'?id='.$object->id, $langs->trans('EnterPaymentReceivedFromCustomer'), $text, 'confirm_payment_add', $formquestion, '', 0, 400);
+			$formconfirm = $form->formconfirm($_SERVER["PHP_SELF"].'?id='.$object->id, $langs->trans('EnterPaymentReceivedFromCustomer'), '', 'confirm_payment_add', $formquestion, 'ducon', 0, 400);
+			// Auto check confirm
+			$formconfirm .= '<script>$(document).ready(function(){ $("#confirm").val("yes"); });</script>';
 	
 			$hookmanager->resPrint = $formconfirm;
 			//mmi_payments::invoice_autoassign_payments($object);

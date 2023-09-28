@@ -34,6 +34,9 @@ MMIPAYMENTS_MYPARAM2=My param 2
 MMIPAYMENTS_MYPARAM2Tooltip=My param 2 tooltip
 MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN=Bouton assigner les paiements de la commande sur la facture
 MMIPAYMENTS_INVOICE_PAYMENT_CHANGE_AMOUNT = Possibilité de modifier le montant du règlement sur un lien de paiement
+MMIPAYMENTS_CAISSE_COMPANY = Utilisateur caisse
+MMIPAYMENTS_DEFAULT_MODE = Mode de règlement par défaut
+MMIPAYMENTS_DEFAULT_ACCOUNT = Compte bancaire par défaut
 
 #
 # About page
