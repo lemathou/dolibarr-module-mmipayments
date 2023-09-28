@@ -29,6 +29,7 @@ require_once "../main_load.inc.php";
 $arrayofparameters = array(
 	'MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN'=>array('type'=>'yesno', 'enabled'=>1),
 	'MMIPAYMENTS_INVOICE_PAYMENT_CHANGE_AMOUNT'=>array('type'=>'yesno', 'enabled'=>1),
+	'MMIPAYMENTS_CAISSE_USER'=>array('type'=>'user', 'enabled'=>1),
 	'MMIPAYMENTS_CAISSE_COMPANY'=>array('type'=>'company', 'enabled'=>1),
 	'MMIPAYMENTS_DEFAULT_MODE'=>array('type'=>'types_paiements', 'enabled'=>1),
 	'MMIPAYMENTS_DEFAULT_ACCOUNT'=>array('type'=>'comptes', 'enabled'=>1),
