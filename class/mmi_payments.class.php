@@ -161,6 +161,8 @@ class mmi_payments
 		
 		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 		
+		/** @var Facture $object */
+
 		$linked_objects = [];
 
 		$object->fetchObjectLinked();
@@ -175,14 +177,29 @@ class mmi_payments
 		}
 
 		if (isset($linked_objects)) {
+			// Paiements déjà associés à la facture
+			$sql = 'SELECT SUM(pi.amount) AS amount'
+				.' FROM '.MAIN_DB_PREFIX.'paiement_facture pi'
+				.' WHERE pi.fk_facture = '.$object->id;
+			$resql = $db->query($sql);
+			//var_dump($resql);
+			// d'un montant total <= cette facture
+			if ($resql && $db->num_rows($resql)) {
+				list($amount) = $resql->fetch_row();
+			}
+			else {
+				$amount = 0;
+			}
+			//var_dump($amount); die();
+
 			$sql_linked_objects = [];
 			foreach($linked_objects as $row)
 				$sql_linked_objects[] = '(po.objecttype="'.$row[0].'" AND po.fk_object='.$row[1].')';
 			// Paiements associés à la commande ou au devis
 			// non imputé à une autre facture
-			// d'un montant <= cette facture (en fait non on assigne tout)
 			$sql = 'SELECT po.fk_paiement, po.amount'
 				.' FROM '.MAIN_DB_PREFIX.'paiement_object po'
+				.' INNER JOIN '.MAIN_DB_PREFIX.'paiement p ON p.rowid=po.fk_paiement'
 				.' LEFT JOIN '.MAIN_DB_PREFIX.'paiement_facture pi'
 					.' ON pi.fk_paiement=po.fk_paiement'
 				.' WHERE ('.implode(' OR ', $sql_linked_objects).')'
@@ -191,6 +208,7 @@ class mmi_payments
 			//echo '<p>'.$sql.'</p>';
 			$resql = $db->query($sql);
 			//var_dump($resql);
+			// d'un montant total <= cette facture
 			if ($resql && $db->num_rows($resql)) {
 				//$object->fetch_thirdparty(); // inutile déjà fait
 				$client = $object->thirdparty;
@@ -199,13 +217,16 @@ class mmi_payments
 				$object->validate($user, '', $object->fk_warehouse);
 				
 				while($objp = $resql->fetch_object()) {
-					
+					if ($amount+$objp->amount > $object->total_ttc)
+						break;
+					$amount += $objp->amount;
+
 					// Imputer le paiement à la facture
 					$sql = 'INSERT INTO '.MAIN_DB_PREFIX.'paiement_facture (fk_facture, fk_paiement, amount, multicurrency_amount)'
-						.' VALUES ('.$object->id.', '.$objp->fk_paiement.', \''.$objp->amount.'\', \''.$objp->amount.'\')';
+						.' VALUES ('.$object->id.', '.$objp->fk_paiement.', \''.(float)$objp->amount.'\', \''.(float)$objp->amount.'\')';
 					//echo '<p>'.$sql.'</p>';
-					$db->query($sql);
-					
+					$ret = $db->query($sql);
+
 					// Add to bank
 					$paiement = new Paiement($db);
 					$paiement->fetch($objp->fk_paiement);

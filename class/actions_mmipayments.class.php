@@ -26,7 +26,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		// Facture
 		if ($this->in_context($parameters, 'invoicecard') && $object->statut>0) {
 			if (!empty($conf->global->MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN)) {
-				if ($object->type == 0) {
+				if (in_array($object->type, [0, 3])) {
 					$link = '?facid='.$object->id.'&action=payment_assign';
 					echo "<a class='butAction' href='".$link."'>".$langs->trans("MMIPaymentsAssign")."</a>";
 				}
