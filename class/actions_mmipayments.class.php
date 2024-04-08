@@ -1,5 +1,6 @@
 <?php
 
+require_once DOL_DOCUMENT_ROOT.'/core/class/notify.class.php';
 dol_include_once('custom/mmicommon/class/mmi_actions.class.php');
 dol_include_once('custom/mmipayments/class/mmi_payments.class.php');
 
@@ -10,6 +11,9 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	function addMoreActionsButtons($parameters, &$object, &$action, $hookmanager)
 	{
 		global $langs, $conf;
+		
+		$error = 0;
+		$print = '';
 
 		// Réglement
 		if ($this->in_context($parameters, 'paymentcard')) {
@@ -80,6 +84,9 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	{
 		global $langs, $conf;
 
+		$error = 0;
+		$print = '';
+
 		if ($this->in_context($parameters, 'invoicecard')) {
 			
 			//var_dump($object);
@@ -97,10 +104,12 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	{
 		global $user, $conf;
 
+		$error = 0;
+		$print = '';
+
 		if ($this->in_context($parameters, 'invoicecard') && $action=='payment_assign') {
 			mmi_payments::invoice_autoassign_payments($object);
 		}
-
 		if ($this->in_context($parameters, ['propalcard', 'ordercard']) && $action=='confirm_payment_add') {
 			//var_dump($_POST);
 			$infos = [
@@ -139,10 +148,12 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	function formConfirm($parameters, &$object, &$action, $hookmanager)
 	{
 		global $langs, $conf;
-
-		$form = new Form($this->db);
-
+		
+		$error = 0;
+		$print = '';
+		
 		if ($this->in_context($parameters, ['propalcard', 'ordercard']) && $action=='payment_add') {
+			$form = new Form($this->db);
 			// Hack MOyens de paiement
 			echo '<style type="text/css">.selectpaymenttypes { width: 150px; }</style>';
 			ob_start();
@@ -166,22 +177,29 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			);
 	
 			if (!empty($conf->MMIPAYMENTS_FORM_CONFIRM_NOTIF) && !empty($conf->notification->enabled)) {
-				require_once DOL_DOCUMENT_ROOT.'/core/class/notify.class.php';
 				$notify = new Notify($this->db);
 				$formquestion = array_merge($formquestion, array(
 					array('type' => 'onecolumn', 'value' => $notify->confirmMessage('PROPAL_CLOSE_SIGNED', $object->socid, $object)),
 				));
 			}
-	
 			$formconfirm = $form->formconfirm($_SERVER["PHP_SELF"].'?id='.$object->id, $langs->trans('EnterPaymentReceivedFromCustomer'), '', 'confirm_payment_add', $formquestion, 'ducon', 0, 400);
 			// Auto check confirm
 			$formconfirm .= '<script>$(document).ready(function(){ $("#confirm").val("yes"); });</script>';
-	
-			$hookmanager->resPrint = $formconfirm;
-			//mmi_payments::invoice_autoassign_payments($object);
+
+			if (false && $conf->global->MMIPAYMENTS_AUTOASSIGN_INVOICE) {
+				mmi_payments::invoice_autoassign_payments($object);
+			}
+			
+			$print = $formconfirm;
 		}
 
-		return 0;
+		if (! $error) {
+			$this->resprints = $print;
+			return 0;
+		}
+		else {
+			return -1;
+		}
 	}
 
 	// New hook on propal and order
