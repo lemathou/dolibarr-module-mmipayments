@@ -1,5 +1,11 @@
 <?php
 
+require_once DOL_DOCUMENT_ROOT.'/societe/class/societe.class.php';
+require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';
+require_once DOL_DOCUMENT_ROOT.'/commande/class/commande.class.php';
+require_once DOL_DOCUMENT_ROOT.'/comm/propal/class/propal.class.php';
+require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
+
 class mmi_payments
 {
 	public static function __init()
@@ -11,19 +17,15 @@ class mmi_payments
 		global $db;
 	
 		if ($objecttype=='Facture') {
-			require_once(DOL_DOCUMENT_ROOT . "/compta/facture/class/facture.class.php");
 			$object = new Facture($db);
 		}
 		elseif ($objecttype=='Commande') {
-			require_once(DOL_DOCUMENT_ROOT . "/commande/class/commande.class.php");
 			$object = new Commande($db);
 		}
 		elseif ($objecttype=='Propal') {
-			require_once(DOL_DOCUMENT_ROOT . "/comm/propal/class/propal.class.php");
 			$object = new Propal($db);
 		}
 		elseif ($objecttype=='Societe') {
-			require_once(DOL_DOCUMENT_ROOT . "/societe/class/societe.class.php");
 			$object = new Societe($db);
 		}
 	
@@ -139,8 +141,6 @@ class mmi_payments
 	{
 		global $db;
 
-		require_once DOL_DOCUMENT_ROOT . '/compta/facture/class/facture.class.php';
-
 		$object->fetchObjectLinked();
 		//var_dump($object->linkedObjectsIds);
 		if(!empty($object->linkedObjectsIds) && !empty($object->linkedObjectsIds['facture']) && count($object->linkedObjectsIds['facture'])==1) {
@@ -158,8 +158,6 @@ class mmi_payments
 	public static function invoice_autoassign_payments($object)
 	{
 		global $db, $user;
-		
-		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 		
 		/** @var Facture $object */
 
@@ -197,7 +195,7 @@ class mmi_payments
 				$sql_linked_objects[] = '(po.objecttype="'.$row[0].'" AND po.fk_object='.$row[1].')';
 			// Paiements associés à la commande ou au devis
 			// non imputé à une autre facture
-			$sql = 'SELECT po.fk_paiement, po.amount'
+			$sql = 'SELECT po.fk_paiement, po.amount, po.objecttype, po.fk_object'
 				.' FROM '.MAIN_DB_PREFIX.'paiement_object po'
 				.' INNER JOIN '.MAIN_DB_PREFIX.'paiement p ON p.rowid=po.fk_paiement'
 				.' LEFT JOIN '.MAIN_DB_PREFIX.'paiement_facture pi'
@@ -217,7 +215,20 @@ class mmi_payments
 				$object->validate($user, '', $object->fk_warehouse);
 				
 				while($objp = $resql->fetch_object()) {
-					if ($amount+$objp->amount > $object->total_ttc)
+					$obj = NULL;
+					$objtot = NULL;
+					if ($objp->objecttype == 'Propal') {
+						$obj = new Propal($db);
+						$obj->fetch($objp->fk_object);
+						$objtot = $obj->total_ttc;
+					}
+					elseif($objp->objecttype == 'Commande') {
+						$obj = new Commande($db);
+						$obj->fetch($objp->fk_object);
+						$objtot = $obj->total_ttc;
+					}
+					// Si le montant dépasse mais que la propal ou commande est d'un montant inférieur, c'est qu'on a payé trop, donc on passe tout de même le paiement
+					if ($amount+$objp->amount > $object->total_ttc && $objtot>$object->total_ttc)
 						break;
 					$amount += $objp->amount;
 
@@ -280,10 +291,7 @@ class mmi_payments
 
 	public static function add($objecttype, $id, $infos)
 	{
-		global $db, $user, $hookmanager;
-
-		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
-		require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';
+		global $db, $user, $conf, $hookmanager;
 
 		// Creation of payment line
 		$paiement = new Paiement($db);
