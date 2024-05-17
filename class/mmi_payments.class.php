@@ -8,6 +8,9 @@ require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 
 class mmi_payments
 {
+	// 3 centimes de marge
+	const AMOUNT_DIFF_CTS = 3;
+
 	public static function __init()
 	{
 	}
@@ -195,6 +198,7 @@ class mmi_payments
 				$sql_linked_objects[] = '(po.objecttype="'.$row[0].'" AND po.fk_object='.$row[1].')';
 			// Paiements associés à la commande ou au devis
 			// non imputé à une autre facture
+			// On commence par les plus gros comme ça on ne met pas les petits qui peuvent aller à une autre ;-)
 			$sql = 'SELECT po.fk_paiement, po.amount, po.objecttype, po.fk_object'
 				.' FROM '.MAIN_DB_PREFIX.'paiement_object po'
 				.' INNER JOIN '.MAIN_DB_PREFIX.'paiement p ON p.rowid=po.fk_paiement'
@@ -202,7 +206,8 @@ class mmi_payments
 					.' ON pi.fk_paiement=po.fk_paiement'
 				.' WHERE ('.implode(' OR ', $sql_linked_objects).')'
 					//.' AND po.amount <= '.$object->total_ttc
-					.' AND pi.fk_paiement IS NULL';
+					.' AND pi.fk_paiement IS NULL'
+				.' ORDER BY po.amount DESC';
 			//echo '<p>'.$sql.'</p>';
 			$resql = $db->query($sql);
 			//var_dump($resql);
@@ -228,7 +233,8 @@ class mmi_payments
 						$objtot = $obj->total_ttc;
 					}
 					// Si le montant dépasse mais que la propal ou commande est d'un montant inférieur, c'est qu'on a payé trop, donc on passe tout de même le paiement
-					if ($amount+$objp->amount > $object->total_ttc && $objtot>$object->total_ttc)
+					// Seul seul blocage c'est mettre qque chose qui dépasse de trop
+					if (($amount+$objp->amount > $object->total_ttc + static::AMOUNT_DIFF_CTS) && ($objtot > $object->total_ttc + static::AMOUNT_DIFF_CTS))
 						break;
 					$amount += $objp->amount;
 
