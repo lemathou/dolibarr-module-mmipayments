@@ -14,11 +14,11 @@ class mmi_payments
 	public static function __init()
 	{
 	}
-	
+
 	public static function loadobject($objecttype, $id)
 	{
 		global $db;
-	
+
 		if ($objecttype=='Facture') {
 			$object = new Facture($db);
 		}
@@ -31,10 +31,10 @@ class mmi_payments
 		elseif ($objecttype=='Societe') {
 			$object = new Societe($db);
 		}
-	
+
 		if (!isset($object))
 			return;
-		
+
 		$object->fetch($id);
 		$object->fetch_thirdparty();
 		return $object;
@@ -43,11 +43,11 @@ class mmi_payments
 	public static function paiements($objecttype, $fk_object)
 	{
 		global $db;
-	
+
 		$sql_where = ["(po.`objecttype`='".$objecttype."' AND po.`fk_object`='".$fk_object."')"];
-	
+
 		// Recherche des objets liés
-		
+
 		$sql = "SELECT e.targettype, e.fk_target
 			FROM ".MAIN_DB_PREFIX."element_element e
 			WHERE e.`sourcetype` LIKE '".$objecttype."' AND e.`fk_source`='".$fk_object."'";
@@ -60,7 +60,7 @@ class mmi_payments
 			else
 				$sql_where[] = "(po.`objecttype` LIKE '".$obj->targettype."' AND po.`fk_object`='".$obj->fk_target."')";
 		}
-			
+
 		$sql = "SELECT e.sourcetype, e.fk_source
 			FROM ".MAIN_DB_PREFIX."element_element e
 			WHERE e.`targettype` LIKE '".$objecttype."' AND e.`fk_target`='".$fk_object."'";
@@ -73,7 +73,7 @@ class mmi_payments
 			else
 				$sql_where[] = "(po.`objecttype` LIKE '".$obj->sourcetype."' AND po.`fk_object`='".$obj->fk_source."')";
 		}
-	
+
 		$sql = "SELECT DISTINCT p2.*, p.*, if(pf.amount>0, pf.amount, p.amount) amount,
 				mr.trans, mr.erreur, mr.auto, mh.hash, mh.amount cb_amount, mh.multiple cb_multiple, mh.info cb_info,
 				b.rowid b_rowid, ba.rowid ba_rowid, ba.ref ba_ref, ba.label ba_label
@@ -96,13 +96,13 @@ class mmi_payments
 			$l[$obj->rowid] = $obj;
 		}
 		//var_dump($l);
-	
-		//LEFT JOIN ".MAIN_DB_PREFIX."mbi_etransactions_return mr ON 
+
+		//LEFT JOIN ".MAIN_DB_PREFIX."mbi_etransactions_return mr ON
 		//LEFT JOIN ".MAIN_DB_PREFIX."mbi_etransactions_hash mh ON mh.rowid=mr.fk_mbi_etransactions
-	
+
 		return $l;
 	}
-	
+
 	public static function total_regle($objecttype, $fk_object)
 	{
 		$regle = 0;
@@ -112,14 +112,14 @@ class mmi_payments
 		}
 		return $regle;
 	}
-	
+
 	public static function payment_invoices($id)
 	{
 		if (!is_numeric($id))
 			return false;
-		
+
 		global $db;
-		
+
 		$sql = 'SELECT f.rowid as facid, f.ref, f.type, f.total_ttc, f.paye, f.entity, f.fk_statut, pf.amount, s.nom as name, s.rowid as socid'
 			.' FROM '.MAIN_DB_PREFIX.'paiement_facture as pf'
 			.' INNER JOIN '.MAIN_DB_PREFIX.'facture as f'
@@ -135,11 +135,11 @@ class mmi_payments
 			return $p;
 		}
 	}
-	
+
 	public static function payment_to_invoice()
 	{
 	}
-	
+
 	public static function invoice_autoassign_payments_from_object($object)
 	{
 		global $db;
@@ -158,10 +158,30 @@ class mmi_payments
 		return 0;
 	}
 
+	public static function propal_addlinepayment(Propal $propal) {
+
+		global $langs;
+		$langs->load('payments');
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/payments.lib.php';
+		$url = getOnlinePaymentUrl(0, 'propal', $propal->ref);
+
+		$description = dol_html_entity_decode('<a href="'.$url.'">'.$langs->trans('TxtLinkPayment').'</a>', ENT_QUOTES, 'UTF-8', 1);
+
+		//Hack to allow Dolibarr to add line
+		$oldstatus = $propal->statut;
+		$propal->statut=Propal::STATUS_DRAFT;
+		$linemax = $propal->line_max();
+		$rangtouse = $linemax + 1;
+
+		$propal->addline($description, 0, 0, 0, 0, 0, 0, 0, "HT", 0, 0, 9, $rangtouse, 1790, 0, 0, 0, $langs->trans('TxtMileStoneLinkPayment'), '', '', 0, null, '', 0, null);
+
+		$propal->statut=$oldstatus;
+	}
+
 	public static function invoice_autoassign_payments($object)
 	{
 		global $db, $user;
-		
+
 		/** @var Facture $object */
 
 		$linked_objects = [];
@@ -215,10 +235,10 @@ class mmi_payments
 			if ($resql && $db->num_rows($resql)) {
 				//$object->fetch_thirdparty(); // inutile déjà fait
 				$client = $object->thirdparty;
-				
+
 				// Valider la facture
 				$object->validate($user, '', $object->fk_warehouse);
-				
+
 				while($objp = $resql->fetch_object()) {
 					$obj = NULL;
 					$objtot = NULL;
@@ -252,7 +272,7 @@ class mmi_payments
 					$paiement->multicurrency_amounts = $paiement->amounts;
 					$paiement->paiementid = ($paiement->type_code ?$paiement->type_code :'OTHER');
 					//var_dump($paiement);
-					
+
 					$label = ($objp->amount>0 ?'(CustomerInvoicePayment)' :'(CustomerInvoicePaymentBack)');
 
 					$sql = "SELECT * FROM `".MAIN_DB_PREFIX."paiement_extrafields`
@@ -265,7 +285,7 @@ class mmi_payments
 						$chqemetteur = $row->chqemetteur;
 						$chqbank = $row->chqbank;
 					}
-					
+
 					if (empty($account_id))
 						$account_id = 1;
 					if (empty($chqemetteur))
@@ -361,7 +381,7 @@ class mmi_payments
 			if ($objecttype=='Propal' && in_array($object->status, [Propal::STATUS_VALIDATED, Propal::STATUS_NOTSIGNED])) {
 				$object->closeProposal($user, propal::STATUS_SIGNED, 'Payment done');
 			}
-	
+
 			// Assign to invoice if only one
 			$object->fetchObjectLinked();
 			if(!empty($object->linkedObjectsIds) && !empty($object->linkedObjectsIds['facture']) && count($object->linkedObjectsIds['facture'])==1) {
@@ -384,12 +404,12 @@ class mmi_payments
 			$paiement->multicurrency_amounts = $paiement->amounts;
 			$paiement->paiementid = ($paiement->type_code ?$paiement->type_code :'OTHER');
 			//var_dump($paiement);
-			
+
 			$label = ($paiement->amount>0 ?'(CustomerInvoicePayment)' :'(CustomerInvoicePaymentBack)');
 			$account_id = $infos['accountid'];
 			$chqemetteur = $infos['chqemetteur'];
 			$chqbank = $infos['chqbank'];
-			
+
 			if (empty($account_id))
 				$account_id = 1;
 			if (empty($chqemetteur))

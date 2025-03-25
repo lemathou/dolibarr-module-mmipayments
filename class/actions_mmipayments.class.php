@@ -10,8 +10,8 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 
 	function addMoreActionsButtons($parameters, &$object, &$action, $hookmanager)
 	{
-		global $langs, $conf;
-		
+		global $langs, $conf, $user;
+
 		$error = 0;
 		$print = '';
 
@@ -25,6 +25,13 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			}
 
 			return 0;
+		}
+
+		if ($this->in_context($parameters, 'propalcard')
+			&& $object instanceof Propal
+			&& $object->status == Propal::STATUS_VALIDATED
+			&& $user->hasRight("propal", "creer")) {
+			print dolGetButtonAction('', $langs->trans('AddLastPaymentLine'), 'default', $_SERVER["PHP_SELF"].'?action=addlinepaiement&token='.newToken().'&id='.$object->id);
 		}
 
 		// Facture
@@ -60,6 +67,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 				</script>';
 			}
 
+
 			return 0;
 		}
 
@@ -77,9 +85,11 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			return 0;
 		}
 
+
+
 		return 0;
 	}
-	
+
 	function afterCreateAction($parameters, &$object, &$action, $hookmanager)
 	{
 		global $langs, $conf;
@@ -88,12 +98,12 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		$print = '';
 
 		if ($this->in_context($parameters, 'invoicecard')) {
-			
+
 			//var_dump($object);
 			if (in_array($object->type, [Facture::TYPE_STANDARD, Facture::TYPE_DEPOSIT])) {
 				mmi_payments::invoice_autoassign_payments($object);
 			}
-			
+
 			return 0;
 		}
 
@@ -106,6 +116,15 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 
 		$error = 0;
 		$print = '';
+
+		if ($this->in_context($parameters, 'propalcard')
+			&& $object instanceof Propal
+			&& $object->status == Propal::STATUS_VALIDATED
+			&& $user->hasRight("propal", "creer")
+			&& $action=='addlinepaiement') {
+			mmi_payments::propal_addlinepayment($object);
+
+		}
 
 		if ($this->in_context($parameters, 'invoicecard') && $action=='payment_assign') {
 			mmi_payments::invoice_autoassign_payments($object);
@@ -148,10 +167,10 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	function formConfirm($parameters, &$object, &$action, $hookmanager)
 	{
 		global $langs, $conf;
-		
+
 		$error = 0;
 		$print = '';
-		
+
 		if ($this->in_context($parameters, ['propalcard', 'ordercard']) && $action=='payment_add') {
 			$form = new Form($this->db);
 			// Hack MOyens de paiement
@@ -175,7 +194,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 				array('type' => 'text', 'name' => 'chqbank', 'label' => $langs->trans("ChequeBank"), 'value' => ''),
 				array('type' => 'other', 'name' => 'comment', 'label' => $langs->trans("Comment"), 'value' => '<textarea name="comment" style="width: 90%;height: 3em;margin-top: 0.5em;"></textarea>'),
 			);
-	
+
 			if (!empty($conf->MMIPAYMENTS_FORM_CONFIRM_NOTIF) && !empty($conf->notification->enabled)) {
 				$notify = new Notify($this->db);
 				$formquestion = array_merge($formquestion, array(
@@ -189,7 +208,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			if (false && $conf->global->MMIPAYMENTS_AUTOASSIGN_INVOICE) {
 				mmi_payments::invoice_autoassign_payments($object);
 			}
-			
+
 			$print = $formconfirm;
 		}
 
@@ -222,12 +241,12 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		$l = mmi_payments::paiements(get_class($object), $object->id);
 		//var_dump($l);
 		print '<tbody>';
-		
+
 		$total = $object->total_ttc;
 		$regle = 0;
 		$regle_prevu = 0;
 		$regle_prevu_trans_list = [];
-		
+
 		if (is_array($l)) foreach($l as $obj) {
 
 			$resql2 = $this->db->query("SELECT CONCAT(code, ' - ', libelle)
@@ -238,7 +257,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			}
 			else
 				$paiement_mode = '';
-			
+
 			$regle += round($obj->amount, 2);
 			if (!in_array($obj->trans, $regle_prevu_trans_list)) {
 				$regle_prevu_trans_list[] = $obj->trans;
@@ -253,7 +272,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			echo '<td><a href="javascript:;" onclick="$(\'#pay_'.$obj->rowid.'\').toggle();">Détais</a></td>';
 			print '<td align="right">'.round($obj->amount, 2).'</td>';
 			print '</tr>';
-			
+
 			print '<tr id="pay_'.$obj->rowid.'" style="display:none;">';
 			print '<td>--></td>';
 			print '<td colspan="4">';
