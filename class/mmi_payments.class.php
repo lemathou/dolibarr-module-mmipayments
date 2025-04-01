@@ -158,6 +158,26 @@ class mmi_payments
 		return 0;
 	}
 
+	public static function propal_addlinepayment(Propal $propal) {
+
+		global $langs;
+		$langs->load('payments');
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/payments.lib.php';
+		$url = getOnlinePaymentUrl(0, 'propal', $propal->ref);
+
+		$description = dol_html_entity_decode('<a href="'.$url.'">'.$langs->trans('TxtLinkPayment').'</a>', ENT_QUOTES, 'UTF-8', 1);
+
+		//Hack to allow Dolibarr to add line
+		$oldstatus = $propal->statut;
+		$propal->statut=Propal::STATUS_DRAFT;
+		$linemax = $propal->line_max();
+		$rangtouse = $linemax + 1;
+
+		$propal->addline($description, 0, 0, 0, 0, 0, 0, 0, "HT", 0, 0, 9, $rangtouse, 1790, 0, 0, 0, $langs->trans('TxtMileStoneLinkPayment'), '', '', 0, null, '', 0, null);
+
+		$propal->statut=$oldstatus;
+	}
+
 	public static function invoice_autoassign_payments($object)
 	{
 		global $db, $user;

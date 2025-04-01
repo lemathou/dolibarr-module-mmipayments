@@ -59,3 +59,7 @@ MyWidgetDescription = My widget description
 
 MMIPaymentsAssign = Assigner paiements depuis Devis/Commande
 MMIPaymentsAdd = Saisir règlement
+
+AddLastPaymentLine=Ajouter ligne paiement
+TxtLinkPayment=Cliquez ici pour valider et régler votre commande
+TxtMileStoneLinkPayment=Lien de règlement
