@@ -38,6 +38,7 @@ MMIPAYMENTS_CAISSE_USER = Utilisateur Dolibarr pour la caisse
 MMIPAYMENTS_CAISSE_COMPANY = Client spécifique pour la caisse
 MMIPAYMENTS_DEFAULT_MODE = Mode de règlement par défaut
 MMIPAYMENTS_DEFAULT_ACCOUNT = Compte bancaire par défaut
+PDF_SHOW_LINK_TO_ONLINE_PAYMENT_ALWAYS = Toujours afficher le lien de paiement en ligne sur les PDF
 
 #
 # About page
