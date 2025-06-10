@@ -33,6 +33,7 @@ $arrayofparameters = array(
 	'MMIPAYMENTS_CAISSE_COMPANY'=>array('type'=>'company', 'enabled'=>1),
 	'MMIPAYMENTS_DEFAULT_MODE'=>array('type'=>'types_paiements', 'enabled'=>1),
 	'MMIPAYMENTS_DEFAULT_ACCOUNT'=>array('type'=>'comptes', 'enabled'=>1),
+	'PDF_SHOW_LINK_TO_ONLINE_PAYMENT_ALWAYS'=>array('type'=>'yesno', 'enabled'=>1),
 	//'MMIPAYMENTS_FORM_CONFIRM_NOTIF'=>array('type'=>'yesno', 'enabled'=>1),
 );
 
