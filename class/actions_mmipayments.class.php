@@ -1,8 +1,11 @@
 <?php
 
 require_once DOL_DOCUMENT_ROOT.'/core/class/notify.class.php';
+require_once DOL_DOCUMENT_ROOT.'/compta/bank/class/account.class.php';
+
 dol_include_once('custom/mmicommon/class/mmi_actions.class.php');
 dol_include_once('custom/mmipayments/class/mmi_payments.class.php');
+dol_include_once('custom/sfycustom/class/mmi_workflow.class.php'); // @todo change
 
 class ActionsMMIPayments extends MMI_Actions_1_0
 {
@@ -153,7 +156,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 				) {
 					// Validation auto expé
 					if (true) {
-						dol_include_once('custom/sfycustom/class/mmi_workflow.class.php');
 						mmi_workflow::order_1clic_shipping($user, $object);
 					}
 				}
@@ -325,6 +327,302 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		print '<div class="underbanner clearboth"></div>';
 
 		return 0;
+	}
+
+	/* Payment means */
+
+	/**
+	 * Check Object OK
+	 * @todo vérifier si utilisé et utile, idem dans mbietransactions
+	 */
+	function doCheckStatus($parameters, &$object, &$action, $hookmanager)
+	{
+		$this->doValidatePayment($parameters, $object, $action, $hookmanager);
+		$objecttype = get_class($object);
+
+		if (in_array($objecttype, ['Propal'])) {
+			// Vérif devis ok, pas relié commande, etc.
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Check Object OK
+	 */
+	function addOnlinePaymentMeans($parameters, &$object, &$action, $hookmanager)
+	{
+		$objecttype = get_class($object);
+
+		if (in_array($objecttype, ['Propal', 'Commande', 'Facture'])) {
+			$hookmanager->results['useonlinepayment'] = true;
+		}
+
+		return 0;
+	}
+	
+	// Boutons moyens de paiement
+	function doaddButton($parameters, &$object, &$action, $hookmanager)
+	{
+		global $db, $langs, $conf, $mysoc;
+
+		// var_dump($object);
+		// die();
+		$time = time();
+
+		$objecttype = get_class($object);
+		$deja = mmi_payments::total_regle($objecttype, $object->id);
+		//var_dump($deja);
+		$reste = ($deja>0 ?max(0, round($object->total_ttc-$deja, 2)) :$object->total_ttc);
+		//var_dump($object->fin_validite, $time, empty($object->fin_validite) || $object->fin_validite < $time);
+
+		if($conf->global->MMIPAYMENTS_CGV_VOILE) {
+			print '<div id="cgi_voile">';
+			print '<div>';
+			if ($objecttype=='Propal') {
+				$fin_validite = $object->fin_validite ?$object->fin_validite+86400 :0;
+				$ok = $fin_validite && $fin_validite > $time;
+				// if (!empty($object->ref_client))
+				// 	echo '<p><b>Référence du projet :</b> '.$object->ref_client.'</p>';
+				if (empty($deja) && $fin_validite && $fin_validite < $time)
+					echo '<p'.(!$ok ?' style="color: red;"' :'').'>Date de fin de validité de votre Devis : '.date('d/m/Y', $fin_validite).'</p>';
+				if (!$ok) {
+					$nok_message = '<b style="color: red;">Votre devis est échu, merci de contacter votre conseiller !</b>';
+				}
+			}
+			else {
+				$ok = true;
+			}
+			if ($ok) {
+				echo '<p><input type="checkbox" id="cgv" name="cgv" value="1" /> '."<label for=\"cgv\">J'ai lu les <a href=\"".$conf->global->MMIPAYMENTS_CGV_URL."\" target=\"_blank\">conditions générales de vente</a> et j'y adhère sans réserve.</label>".'</p>';
+			}
+			elseif (!empty($nok_message)) {
+				echo '<p>'.$nok_message.'</p>';
+			}
+			echo '</div>';
+			//var_dump($object); die();
+			echo '<div id="voile" class="voile"></div>';
+			echo '</div>';
+		}
+
+		// Virement
+		if ($conf->global->MMIPAYMENTS_TRANSFER_ENABLED) {
+			if($conf->global->PAYMENTBYBANKTRANSFER_ID_BANKACCOUNT) {
+				$account = new account($db);
+				$account->fetch($conf->global->PAYMENTBYBANKTRANSFER_ID_BANKACCOUNT);
+
+				echo '<div class="button buttonpayment" id="div_dopayment_transfer" data-pos="99">
+				<input class="" type="submit" id="dopayment_transfer" name="dopayment_transfer" value="'.$langs->trans('MMIPaymentsDoPaymentTransfer').'" />';
+				echo '<div class="pay_infos">';
+				echo '<p>Il vous faudra transférer le montant de la facture sur notre compte bancaire.</p>'
+				//.'<p>Vous recevrez votre confirmation de commande par e-mail, comprenant nos coordonnées bancaires et le numéro de commande.</p>'
+				.'<p>Nous traiterons votre commande dès la réception du paiement.</p>'
+				.'<p class="small">Cliquer pour plus d\'informations</p>';
+				echo '</div>';
+				echo '</div>';
+			}
+		}
+
+		// Chèque
+		if ($conf->global->MMIPAYMENTS_CHEQUE_ENABLED) {
+			//var_dump($mysoc);
+			echo '<div class="button buttonpayment" id="div_dopayment_cheque" data-pos="99">
+			<input class="" type="submit" id="dopayment_cheque" name="dopayment_cheque" value="'.$langs->trans('MMIPaymentsDoPaymentCheque').'" />';
+			echo '<div class="pay_infos">'
+			.'<p>A l\'ordre de : <b>'.$mysoc->name.'</b><br />'.$mysoc->address.'<br />'.$mysoc->zip.' '.$mysoc->town.'</p>'
+			.'<p>Nous traiterons votre commande dès la réception du paiement.</p>'
+			.'<p class="small">Cliquer pour plus d\'informations</p>';
+			echo '</div>';
+			echo '</div>';
+		}
+
+		print '<script>
+			$( document ).ready(function() {
+				// Voile
+				$("#cgi_voile").detach().insertAfter("#tablepublicpayment");
+				$("#cgv").click(function(e){
+					$("#voile").toggle();
+				});
+
+				// Reorder
+				var newpos = $("#tablepublicpayment").parent();
+				$("#div_dopayment_transfer").detach().appendTo(newpos);
+				$("#div_dopayment_cheque").detach().appendTo(newpos);
+
+				// Clic
+				$("#div_dopayment_transfer input").click(function(e){
+					if (confirm("Je confirme ma commande avec obligation de paiement.")) {
+						$(this).css( \'cursor\', \'wait\' );
+						$(\'input\', this).submit();
+						return true;
+					}
+					else {
+						return false;
+					}
+				});
+				$("#div_dopayment_transfer p").click(function(e){
+					$("#div_dopayment_transfer input").click();
+				});
+				$("#div_dopayment_cheque input").click(function(e){
+					if (confirm("Je confirme ma commande avec obligation de paiement.")) {
+						$(this).css( \'cursor\', \'wait\' );
+						return true;
+					}
+					else {
+						return false;
+					}
+				});
+				$("#div_dopayment_cheque p").click(function(e){
+					$("#div_dopayment_cheque input").click();
+				});
+			});
+			</script>';
+
+		return 0;
+	}
+
+	// Payment means
+	function doValidatePayment($parameters, &$object, &$action, $hookmanager)
+	{
+		global $conf;
+
+		//var_dump($parameters); var_dump(get_class($object)); var_dump($action);
+		$parameters['validpaymentmethod']['cheque'] = $conf->global->MMIPAYMENTS_CHEQUE_ENABLED;
+		$parameters['validpaymentmethod']['transfer'] = $conf->global->MMIPAYMENTS_TRANSFER_ENABLED;
+
+		return 0;
+	}
+
+	// Payment means
+	function getValidPayment($parameters, &$object, &$action, $hookmanager)
+	{
+		global $conf;
+
+		//var_dump($parameters); var_dump(get_class($object)); var_dump($action);
+		$this->results['validpaymentmethod']['cheque'] = $conf->global->MMIPAYMENTS_CHEQUE_ENABLED;
+		$this->results['validpaymentmethod']['transfer'] = $conf->global->MMIPAYMENTS_TRANSFER_ENABLED;
+
+		return 0;
+	}
+
+	// This hook is used to show the embedded form to make payments with external payment modules (ie Payzen, ...)
+	function doPayment($parameters, &$object, &$action, $hookmanager)
+	{
+		global $db, $conf, $mysoc, $user;
+		//var_dump($mysoc); die();
+		//echo $parameters['paymentmethod'];
+
+		// If we are in a validpaymentmethod context, we only return the valid payment methods
+		if (isset($parameters['validpaymentmethod'])) {
+			$parameters['validpaymentmethod']['cheque'] = $conf->global->MMIPAYMENTS_CHEQUE_ENABLED;
+			$parameters['validpaymentmethod']['transfer'] = $conf->global->MMIPAYMENTS_TRANSFER_ENABLED;
+			return 0;
+		}
+		
+		if(($client=$object->thirdparty) && $client->email) {
+			$mail_notif_to = [];
+			
+			if (!empty($conf->global->MMIPAYMENTS_NOTIFICATION_EMAIL))
+				$mail_notif_to[] = $conf->global->MMIPAYMENTS_NOTIFICATION_EMAIL;
+			$contacts = $object->liste_contact(-1, 'internal');
+			$contacts_ok = false;
+			foreach($contacts as $contact) {
+				$contacts_ok = true;
+				if (!empty($contact->email) && !in_array($contact->email, $mail_notif_to))
+					$mail_notif_to[] = $contact->email;
+			}
+			$contacts = $client->getSalesRepresentatives($user);
+			foreach($contacts as $contact) {
+				$contacts_ok = true;
+				if (!empty($contact['email']) && !in_array($contact['email'], $mail_notif_to))
+					$mail_notif_to[] = $contact['email'];
+			}
+			$to_email = $client->nom.' <'.$client->email.'>';
+			$from_email = $mysoc->name.' <'.$mysoc->email.'>';
+			$notif_email = (!empty($mail_notif_to) ?'Bcc: '.implode(',', $mail_notif_to)."\r\n" :'');
+			// @todo : $mailfile = new CMailFile($subject, $sendto, $from, $message, $filepath, $mimetype, $filename, $sendtocc, $sendtobcc, $deliveryreceipt, -1, '', '', $trackid, '', $sendcontext);
+		}
+
+		$object_class = get_class($object);
+		if ($object_class=='Propal')
+			$otype = 'Devis';
+		else
+			$otype = $object_class;
+
+		//var_dump($parameters);
+		if ($parameters['paymentmethod']=='transfer') {
+			if ($conf->global->PAYMENTBYBANKTRANSFER_ID_BANKACCOUNT) {
+				mmi_etransactions::object_mode_reglement_set($object, 'VIR');
+				$account = new account($db);
+				$account->fetch($conf->global->PAYMENTBYBANKTRANSFER_ID_BANKACCOUNT);
+				//var_dump($account);
+				$title = '<h2 class="title" style="margin-top: 0;">Vous avez choisi de payer par virement</h2>';
+				$info = '<p>Votre demande a bien été prise en considération.</p>
+				<p>Merci de nous envoyer votre paiement par virement bancaire,</p>
+				<p>Montant du règlement : '.$parameters['amount'].'&nbsp;&euro;</p>
+				<p>Code Banque : '.$account->code_banque.'<br />
+				Code Guichet :  '.$account->code_guichet.'<br />
+				Numéro de compte : '.$account->number.'<br />
+				Clé RIB : '.$account->cle_rib.'<br />
+				IBAN : <b>'.$account->iban.'</b><br />
+				Code BIC / SWIFT : <b>'.$account->bic.'</b></p>
+				<p>Adresse de la banque / Domiciliation du compte :</p>
+				<p>'.str_replace("\r\n", '<br />', $account->domiciliation).'</p>
+				<p>N\'oubliez pas la référence de votre '.$otype.' dans la description du virement :<br /><b>'.$object->ref.'</b></p>'
+				.($object->thirdparty && $object->thirdparty->email ?'<p>Un e-mail contenant ces informations a été envoyé sur votre adresse :<br /><b>'.$object->thirdparty->email.'</b></p>' :'')
+				.'<p><b>Votre commande sera traitée dès réception de votre virement.</b></p>'
+				.($conf->global->MMIPAYMENTS_WEBSITE_CONTACT_URL ?'<p>Pour toute question ou information complémentaire,<br />
+				merci de contacter notre <a href="'.$conf->global->MMIPAYMENTS_WEBSITE_CONTACT_URL.'">support client</a>.</p>' :'');
+
+				$this->resprints = '<table align="center" width="600">'
+				.'<tr><td style="text-align: center;">'.$title.'</td></tr>'
+				.'<tr><td><div style="width: 559px;border: 1px solid #aaa;padding: 20px;">'
+				.$info
+				.'</div></td></tr></table>';
+				if($object->thirdparty && $object->thirdparty->email) {
+					mail($to_email,
+						'=?utf-8?B?'.base64_encode('Votre '.$otype.' '.$object->ref.' en attente de réglement par virement bancaire').'?=',
+						$info,
+						"Content-Type: text/html; charset=\"UTF-8\";\r\nFrom: ".$from_email."\r\n".$notif_email);
+				}
+			}
+			else {
+				$info = '<h2 class="title" style="margin-top: 0;">Vous avez choisi de payer par virement</h3>'
+				.'<p>Toutefois, ce moyen de paiement est temporairement désactivé.</p>'
+				.'<p>Merci de nous contacter pour plus de détails.</p>';
+				$this->resprints = $info;
+
+			}
+		}
+		elseif ($parameters['paymentmethod']=='cheque') {
+			mmi_etransactions::object_mode_reglement_set($object, 'CHQ');
+
+			$title = '<h2 class="title" style="margin-top: 0;">Vous avez choisi de payer par chèque</h2>';
+			$info = '<p>Votre demande a bien été prise en considération.</p>
+			<p>Merci de nous envoyer votre paiement par chèque,</p>
+			<p>- Montant du règlement : '.$parameters['amount'].'&nbsp;&euro;</p>
+			<p>- Payable à l\'ordre de : <b>'.$mysoc->name.'</b>,</p>
+			<p>- Envoyer à l\'adresse suivante :</p>
+			<p style="margin-left: 40px;"><b>'.$mysoc->address.'<br />'.$mysoc->zip.' '.$mysoc->town.'</b></p>
+			<p>- N\'oubliez pas la référence de votre '.$otype.' : <b>'.$object->ref.'</b></p>'
+			.($object->thirdparty && $object->thirdparty->email ?'<p>Un e-mail contenant ces informations a été envoyé sur votre adresse : '.$object->thirdparty->email.'</p>' :'')
+			.'<p><b>Votre commande sera traitée dès réception de votre chèque.</b></p>'
+			.($conf->global->MMIPAYMENTS_WEBSITE_CONTACT_URL ?'<p>Pour toute question ou information complémentaire,<br />
+			merci de contacter notre <a href="'.$conf->global->MMIPAYMENTS_WEBSITE_CONTACT_URL.'">support client</a>.</p>' :'');
+
+			$this->resprints = '<table align="center" width="600"><tr><td align="center">'.$title.'</td></tr><tr><td><div style="width: 559px;border: 1px solid #aaa;padding: 20px;">'
+			.$info
+			.'</div></td></tr></table>';
+			if($object->thirdparty && $object->thirdparty->email) {
+				mail($to_email,
+					'=?utf-8?B?'.base64_encode('Votre '.$otype.' '.$object->ref.' en attente de réglement par chèque').'?=',
+					$info, 
+					"Content-Type: text/html; charset=\"UTF-8\";\r\nFrom: ".$from_email."\r\n".$notif_email);
+			}
+		}
+		//die('YO');
+
+		return 1;
 	}
 }
 

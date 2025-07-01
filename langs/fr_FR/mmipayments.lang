@@ -18,20 +18,15 @@
 #
 
 # Module label 'ModuleMMIPaymentsName'
-ModuleMMIPaymentsName = Paiements sur Devis/Commandes
+ModuleMMIPaymentsName = MMI Paiements sur Devis/Commandes
 # Module description 'ModuleMMIPaymentsDesc'
-ModuleMMIPaymentsDesc = Permet de gérer directement, sans passer par le système d'acomptes, des règlements sur des Devis et des Commandes, qui seont affectés automatiquement au moment de la facturation
+ModuleMMIPaymentsDesc = Permet de gérer directement, sans passer par le système d'acomptes, des règlements sur des Devis et des Commandes, qui seont affectés automatiquement au moment de la facturation (via une facture "normale")
 
 #
 # Admin page
 #
-MMIPaymentsSetup = MMIPayments setup
-Settings = Settings
-MMIPaymentsSetupPage = MMIPayments setup page
-MMIPAYMENTS_MYPARAM1 = My param 1
-MMIPAYMENTS_MYPARAM1Tooltip = My param 1 tooltip
-MMIPAYMENTS_MYPARAM2=My param 2
-MMIPAYMENTS_MYPARAM2Tooltip=My param 2 tooltip
+MMIPaymentsSetup = Configuration module MMI Paiements sur Devis/Commandes
+MMIPaymentsSetupPage = Configuration MMI Paiements
 MMIPAYMENTS_INVOICE_PAYMENT_ASSIGN=Bouton assigner les paiements de la commande sur la facture
 MMIPAYMENTS_INVOICE_PAYMENT_CHANGE_AMOUNT = Possibilité de modifier le montant du règlement sur un lien de paiement
 MMIPAYMENTS_CAISSE_USER = Utilisateur Dolibarr pour la caisse
@@ -39,13 +34,19 @@ MMIPAYMENTS_CAISSE_COMPANY = Client spécifique pour la caisse
 MMIPAYMENTS_DEFAULT_MODE = Mode de règlement par défaut
 MMIPAYMENTS_DEFAULT_ACCOUNT = Compte bancaire par défaut
 PDF_SHOW_LINK_TO_ONLINE_PAYMENT_ALWAYS = Toujours afficher le lien de paiement en ligne sur les PDF
+MMIPAYMENTS_PAGE = Page de paiement
+MMIPAYMENTS_CGV_VOILE = Afficher le bouton de validation des CGV en voilant les moyens de paiement
+MMIPAYMENTS_CGV_URL = URL des CGV
+MMIPAYMENTS_WEBSITE_CONTACT_URL = URL de contact sur le site web
+MMIPAYMENTS_NOTIFICATION_EMAIL = Email des notifications (réception)
+MMIPAYMENTS_TRANSFER_ENABLED = Afficher le moyen de paiement par virement bancaire
+MMIPAYMENTS_CHEQUE_ENABLED = Afficher le moyen de paiement par chèque
 
 #
 # About page
 #
-About = About
-MMIPaymentsAbout = About MMIPayments
-MMIPaymentsAboutPage = MMIPayments about page
+MMIPaymentsAbout = A propos de MMI Paiements sur Devis/Commandes
+MMIPaymentsAboutPage = A propos de MMI Paiements
 
 #
 # Sample page
@@ -64,3 +65,6 @@ MMIPaymentsAdd = Saisir règlement
 AddLastPaymentLine=Ajouter ligne paiement
 TxtLinkPayment=Cliquez ici pour valider et régler votre commande
 TxtMileStoneLinkPayment=Lien de règlement
+
+MMIPaymentsDoPaymentTransfer = Payer par virement bancaire
+MMIPaymentsDoPaymentCheque = Payer par chèque
