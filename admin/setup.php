@@ -35,6 +35,13 @@ $arrayofparameters = array(
 	'MMIPAYMENTS_DEFAULT_ACCOUNT'=>array('type'=>'comptes', 'enabled'=>1),
 	'PDF_SHOW_LINK_TO_ONLINE_PAYMENT_ALWAYS'=>array('type'=>'yesno', 'enabled'=>1),
 	//'MMIPAYMENTS_FORM_CONFIRM_NOTIF'=>array('type'=>'yesno', 'enabled'=>1),
+	'MMIPAYMENTS_PAGE'=>array('type'=>'separator', 'enabled'=>1),
+	'MMIPAYMENTS_CGV_VOILE'=>array('type'=>'yesno', 'enabled'=>1),
+	'MMIPAYMENTS_CGV_URL'=>array('type'=>'string', 'enabled'=>1),
+	'MMIPAYMENTS_NOTIFICATION_EMAIL'=>array('type'=>'string', 'enabled'=>1),
+	'MMIPAYMENTS_WEBSITE_CONTACT_URL'=>array('type'=>'string', 'enabled'=>1),
+	'MMIPAYMENTS_TRANSFER_ENABLED'=>array('type'=>'yesno', 'enabled'=>1),
+	'MMIPAYMENTS_CHEQUE_ENABLED'=>array('type'=>'yesno', 'enabled'=>1),
 );
 
 require_once('../../mmicommon/admin/mmisetup_1.inc.php');
