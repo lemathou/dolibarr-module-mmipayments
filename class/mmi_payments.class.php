@@ -472,7 +472,7 @@ class mmi_payments
 			// DEJA REGLE
 			$dejaregle = $object->getSommePaiement(($conf->multicurrency->enabled && $object->multicurrency_tx != 1) ? 1 : 0);
 			// RESTE A PAYER
-			$resteapayer = price2num($paiement->amount - $dejaregle);
+			$resteapayer = price2num($object->total_ttc - $dejaregle - $object->getSumCreditNotesUsed() - (getDolGlobalInt('FACTURE_SUPPLIER_DEPOSITS_ARE_JUST_PAYMENTS') ?$object->getSumDepositsUsed() :0));
 			if (round($resteapayer, 2) == 0) {
 				// Volontairement pas mis <= 0 pour que l'on traite manuellement les situations de trop perçu
 				// FACTURE DECLAREE PAYEE
