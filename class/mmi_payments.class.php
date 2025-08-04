@@ -82,34 +82,39 @@ class mmi_payments
 
 	public static function paiements($objecttype, $fk_object)
 	{
-		$sql_where = ["(po.`objecttype`='".$objecttype."' AND po.`fk_object`='".$fk_object."')"];
-
-		// Recherche des objets liés
-
-		$sql = "SELECT e.targettype, e.fk_target
-			FROM ".MAIN_DB_PREFIX."element_element e
-			WHERE e.`sourcetype` LIKE '".$objecttype."' AND e.`fk_source`='".$fk_object."'";
-		//echo '<p>'.$sql.'</p>';
-		$resql = static::$db->query($sql);
-		while ($obj = static::$db->fetch_object($resql)) {
-			//var_dump($obj);
-			if ($obj->targettype=='facture')
-				$sql_where[] = "(pf.`fk_facture`='".$obj->fk_target."')";
-			else
-				$sql_where[] = "(po.`objecttype` LIKE '".$obj->targettype."' AND po.`fk_object`='".$obj->fk_target."')";
+		if ($objecttype=='Facture') {
+			$sql_where[] = "(pf.`fk_facture`='".$fk_object."')";
 		}
+		else {
+			$sql_where = ["(po.`objecttype`='".$objecttype."' AND po.`fk_object`='".$fk_object."')"];
 
-		$sql = "SELECT e.sourcetype, e.fk_source
-			FROM ".MAIN_DB_PREFIX."element_element e
-			WHERE e.`targettype` LIKE '".$objecttype."' AND e.`fk_target`='".$fk_object."'";
-		//echo '<p>'.$sql.'</p>';
-		$resql = static::$db->query($sql);
-		while ($obj = static::$db->fetch_object($resql)) {
-			//var_dump($obj);
-			if ($obj->targettype=='facture')
-				$sql_where[] = "(pf.`fk_facture`='".$obj->fk_source."')";
-			else
-				$sql_where[] = "(po.`objecttype` LIKE '".$obj->sourcetype."' AND po.`fk_object`='".$obj->fk_source."')";
+			// Recherche des objets liés
+
+			$sql = "SELECT e.targettype, e.fk_target
+				FROM ".MAIN_DB_PREFIX."element_element e
+				WHERE e.`sourcetype` LIKE '".$objecttype."' AND e.`fk_source`='".$fk_object."'";
+			//echo '<p>'.$sql.'</p>';
+			$resql = static::$db->query($sql);
+			while ($obj = static::$db->fetch_object($resql)) {
+				//var_dump($obj);
+				if ($obj->targettype=='facture')
+					$sql_where[] = "(pf.`fk_facture`='".$obj->fk_target."')";
+				else
+					$sql_where[] = "(po.`objecttype` LIKE '".$obj->targettype."' AND po.`fk_object`='".$obj->fk_target."')";
+			}
+
+			$sql = "SELECT e.sourcetype, e.fk_source
+				FROM ".MAIN_DB_PREFIX."element_element e
+				WHERE e.`targettype` LIKE '".$objecttype."' AND e.`fk_target`='".$fk_object."'";
+			//echo '<p>'.$sql.'</p>';
+			$resql = static::$db->query($sql);
+			while ($obj = static::$db->fetch_object($resql)) {
+				//var_dump($obj);
+				if ($obj->targettype=='facture')
+					$sql_where[] = "(pf.`fk_facture`='".$obj->fk_source."')";
+				else
+					$sql_where[] = "(po.`objecttype` LIKE '".$obj->sourcetype."' AND po.`fk_object`='".$obj->fk_source."')";
+			}
 		}
 
 		$sql = "SELECT DISTINCT p2.*, p.*, if(pf.amount>0, pf.amount, p.amount) amount,
