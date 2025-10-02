@@ -5,7 +5,7 @@ require_once DOL_DOCUMENT_ROOT.'/compta/bank/class/account.class.php';
 
 dol_include_once('custom/mmicommon/class/mmi_actions.class.php');
 dol_include_once('custom/mmipayments/class/mmi_payments.class.php');
-dol_include_once('custom/mmiworkflow/class/mmi_workflow.class.php'); // @todo change
+dol_include_once('custom/mmiworkflow/class/mmi_workflow.class.php');
 
 class ActionsMMIPayments extends MMI_Actions_1_0
 {
