@@ -76,6 +76,8 @@ class mmi_payments
 		$object = static::loadobject($objecttype, $id);
 		if (!isset($object))
 			return;
+                if ($objecttype=='Commande')
+                        $objecttype = 'order';
 
 		return dol_hash($conf->global->PAYMENT_SECURITY_TOKEN.strtolower($objecttype).$object->ref, 2);
 	}
