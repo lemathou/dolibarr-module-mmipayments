@@ -130,7 +130,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		}
 
 		if ($this->in_context($parameters, 'invoicecard') && $action=='payment_assign') {
-			mmi_payments::invoice_autoassign_payments($object);
+			mmi_payments::invoice_autoassign_payments($object, true);
 		}
 		if ($this->in_context($parameters, ['propalcard', 'ordercard']) && $action=='confirm_payment_add') {
 			//var_dump($_POST);

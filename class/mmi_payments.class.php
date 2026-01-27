@@ -217,7 +217,7 @@ class mmi_payments
 		$propal->statut=$oldstatus;
 	}
 
-	public static function invoice_autoassign_payments($object)
+	public static function invoice_autoassign_payments($object, $force=false)
 	{
 		global $user;
 
@@ -293,7 +293,7 @@ class mmi_payments
 					}
 					// Si le montant dépasse mais que la propal ou commande est d'un montant inférieur, c'est qu'on a payé trop, donc on passe tout de même le paiement
 					// Seul seul blocage c'est mettre qque chose qui dépasse de trop
-					if (($amount+$objp->amount > $object->total_ttc + static::AMOUNT_DIFF_CTS) && ($objtot > $object->total_ttc + static::AMOUNT_DIFF_CTS))
+					if (!$force && ($amount+$objp->amount > $object->total_ttc + static::AMOUNT_DIFF_CTS) && ($objtot > $object->total_ttc + static::AMOUNT_DIFF_CTS))
 						break;
 					$amount += $objp->amount;
 
