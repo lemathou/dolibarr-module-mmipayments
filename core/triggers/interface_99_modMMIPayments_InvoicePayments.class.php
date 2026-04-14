@@ -69,10 +69,10 @@ class InterfaceInvoicePayments extends DolibarrTriggers
 
 		global $db;
 		$langs->loadLangs(array("mmipayments@mmipayments"));
-		
+
 		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 		require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';
-		
+
 		switch($action) {
 			//var_dump($action); var_dump($object);
 			case 'BILL_CREATE':
@@ -80,7 +80,7 @@ class InterfaceInvoicePayments extends DolibarrTriggers
 			case 'BILL_VALIDATE':
 				// @todo découper et mettre dans un service !
 				// Si depuis commande
-				if(!empty($object->linked_objects['commande'])) {
+				if (!empty($object->linked_objects['commande'])) {
 					// => Associer la commande
 					$commande = new Commande($db);
 					$commande->fetch($object->linked_objects['commande']);
@@ -89,15 +89,53 @@ class InterfaceInvoicePayments extends DolibarrTriggers
 					// Si commande depuis un/des devis
 					if (!empty($commande->linkedObjectsIds['propal'])) {
 						// => Associer le(s) devis
-						foreach($commande->linkedObjectsIds['propal'] as $id)
+						foreach ($commande->linkedObjectsIds['propal'] as $id)
 							$object->add_object_linked('propal', $id);
 					}
 				}
 				//$object->fetchObjectLinked();
 				//var_dump($object); $db->rollback(); die();
 				break;
+
+
+			case 'LINEBILL_INSERT':
+				$invoice = new Facture($this->db);
+				$invoice->fetch($object->fk_facture);
+				// Si depuis commande
+
+				if (!empty($invoice->id)
+					&& $invoice->type == Facture::TYPE_DEPOSIT
+					&& is_numeric(strpos($object->desc, '(DEPOSIT)'))) {
+
+					$invoice->fetchObjectLinked();
+					require_once DOL_DOCUMENT_ROOT . '/core/class/html.formmargin.class.php';
+					$formMargin = new FormMargin($this->db);
+					if (array_key_exists('commande', $invoice->linkedObjects) && count($invoice->linkedObjects['commande']) > 0) {
+
+						//var_dump($object->pa_ht );
+						foreach ($invoice->linkedObjects['commande'] as $order) {
+							$marginInfos = $formMargin->getMarginInfosArray($order);
+
+							if (!empty((float)$marginInfos['total_mark_rate'])) {
+								$object->pa_ht = $object->total_ttc - ($object->total_ttc * ($marginInfos['total_mark_rate'] / 100));
+								$object->update($user, 1);
+							}
+							break;
+						}
+					} elseif (array_key_exists('propal', $invoice->linkedObjects) && count($invoice->linkedObjects['propal']) > 0) {
+						foreach ($invoice->linkedObjects['propal'] as $propal) {
+							$marginInfos = $formMargin->getMarginInfosArray($propal);
+							if (!empty((float)$marginInfos['total_mark_rate'])) {
+								$object->pa_ht =  $object->total_ttc - ($object->total_ttc * ($marginInfos['total_mark_rate'] / 100));
+								$object->update($user, 1);
+							}
+							break;
+						}
+					}
+				}
+				//exit;
+				break;
 		}
-		
 		return 0;
 	}
 }
