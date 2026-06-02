@@ -68,3 +68,12 @@ TxtMileStoneLinkPayment=Lien de règlement
 
 MMIPaymentsDoPaymentTransfer = Payer par virement bancaire
 MMIPaymentsDoPaymentCheque = Payer par chèque
+
+#
+# Bloc « Derniers règlements » sur l'onglet Client + page dédiée
+#
+MMIPaymentsLastPayments = Derniers règlements
+MMIPaymentsSeeAll = Voir tous les règlements
+MMIPaymentsAllPayments = Règlements du tiers
+MMIPaymentsNoPayment = Aucun règlement pour ce tiers.
+MMIPaymentsTotalReceived = Total encaissé
