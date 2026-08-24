@@ -72,7 +72,7 @@ class modMMIPayments extends DolibarrModules
 		$this->editor_url = 'https://iprospective.fr';
 
 		// Possible values for version are: 'development', 'experimental', 'dolibarr', 'dolibarr_deprecated' or a version string like 'x.y.z'
-		$this->version = '1.2';
+		$this->version = '1.3';
 		// Url to the file with your last numberversion of this module
 		//$this->url_last_version = 'http://www.example.com/versionmodule.txt';
 
@@ -300,6 +300,25 @@ class modMMIPayments extends DolibarrModules
 		// Main menu entries to add
 		$this->menu = array();
 		$r = 0;
+		// Entrée sous Facturation → Règlements : la liste globale des règlements et,
+		// surtout, la vue des paiements à recréer — jusqu'ici introuvable autrement
+		// qu'en ouvrant les fiches une par une.
+		$this->menu[$r++] = array(
+			// Sous « Règlements » du menu Facturation. Dolibarr rattache par le couple
+			// fk_mainmenu / fk_leftmenu (fk_menu vaut alors -1, c'est normal).
+			'fk_menu'  => 'fk_mainmenu=billing,fk_leftmenu=customers_bills_payment',
+			'type'     => 'left',
+			'titre'    => 'MMIPaymentsAllPayments',
+			'mainmenu' => 'billing',
+			'leftmenu' => 'mmipayments_list',
+			'url'      => '/mmipayments/list.php',
+			'langs'    => 'mmipayments@mmipayments',
+			'position' => 1000 + $r,
+			'enabled'  => '$conf->mmipayments->enabled',
+			'perms'    => '$user->rights->facture->lire',
+			'target'   => '',
+			'user'     => 0,
+		);
 		// Add here entries to declare new menus
 		/* BEGIN MODULEBUILDER TOPMENU
 		$this->menu[$r++] = array(

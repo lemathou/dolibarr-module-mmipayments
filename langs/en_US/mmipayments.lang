@@ -63,3 +63,7 @@ MMIPaymentsTotalReceived = Total received
 MMIPaymentsTabTitle = Payments
 MMIPaymentsStatusReceived = Received
 MMIPaymentsNoPaymentForObject = No payment or payment attempt.
+MMIPaymentsModePayments = Payments
+MMIPaymentsModeAttempts = Payments to recreate
+MMIPaymentsNoModuleProvidesAttempts = No installed payment module provides payment attempts.
+MMIPaymentsListTruncated = List capped at the first %s rows out of %s. Narrow the search to see the others.

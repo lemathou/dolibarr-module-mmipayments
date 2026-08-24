@@ -413,6 +413,139 @@ class mmi_payments
 		return implode(', ', $links);
 	}
 
+	/**
+	 * Vue GLOBALE : règlements de tous les tiers, et tentatives de paiement quand
+	 * les modules en fournissent. Alimente la liste `list.php`.
+	 *
+	 * Deux modes, parce que les deux natures de données ne se paginent pas pareil :
+	 *  - 'payments'  : les règlements, paginés en SQL (le socle sait faire) ;
+	 *  - 'attempts'  : les tentatives, que seuls les modules de paiement connaissent.
+	 *    Le socle n'a rien à y mettre ; il interroge le hook `addGlobalPaymentRows`
+	 *    (contexte `mmipaymentslist`) et plafonne le résultat, en le signalant.
+	 *
+	 * Le mode 'attempts' avec le filtre 'missing_payment' répond à la question qui
+	 * n'avait aucune réponse jusqu'ici : quels encaissements ont abouti côté banque
+	 * sans que le paiement Dolibarr existe, sur l'ENSEMBLE du parc ?
+	 *
+	 * @param array       $filters     'mode', 'missing_payment', 'socid', 'datefrom', 'dateto', 'limit', 'offset'
+	 * @param HookManager $hookmanager Gestionnaire de hooks (contexte mmipaymentslist initialisé)
+	 * @return array                   array('rows' => …, 'total' => int|null, 'truncated' => bool)
+	 */
+	public static function global_payment_rows($filters = array(), $hookmanager = null)
+	{
+		global $langs;
+
+		$filters += array('mode' => 'payments', 'missing_payment' => 0, 'socid' => 0,
+			'datefrom' => '', 'dateto' => '', 'limit' => 100, 'offset' => 0);
+		$limit  = max(1, (int) $filters['limit']);
+		$offset = max(0, (int) $filters['offset']);
+
+		if ($filters['mode'] === 'attempts') {
+			$rows = array();
+			$truncated = false;
+			if (is_object($hookmanager)) {
+				$parameters = array('filters' => $filters);
+				$dummy = new stdClass();
+				$action = '';
+				$reshook = $hookmanager->executeHooks('addGlobalPaymentRows', $parameters, $dummy, $action);
+				if ($reshook >= 0 && !empty($hookmanager->resArray['payment_rows'])) {
+					$rows = $hookmanager->resArray['payment_rows'];
+				}
+			}
+			uasort($rows, function ($a, $b) {
+				$da = isset($a['date']) ? $a['date'] : 0;
+				$db = isset($b['date']) ? $b['date'] : 0;
+				if ($da == $db) {
+					return 0;
+				}
+				return ($da > $db) ? -1 : 1;
+			});
+			$total = count($rows);
+			if ($total > $limit) {
+				$rows = array_slice($rows, 0, $limit, true);
+				$truncated = true;	// jamais silencieux : la vue l'affiche
+			}
+			return array('rows' => $rows, 'total' => $total, 'truncated' => $truncated);
+		}
+
+		// Mode 'payments' : règlements, paginés en SQL
+		$where = "p.entity IN (".getEntity('facture').")";
+		if (!empty($filters['socid'])) {
+			$where .= " AND (f.fk_soc = ".(int) $filters['socid']
+				." OR c.fk_soc = ".(int) $filters['socid']
+				." OR pr.fk_soc = ".(int) $filters['socid'].")";
+		}
+		if (!empty($filters['datefrom'])) {
+			$where .= " AND p.datep >= '".static::$db->idate($filters['datefrom'])."'";
+		}
+		if (!empty($filters['dateto'])) {
+			$where .= " AND p.datep <= '".static::$db->idate($filters['dateto'])."'";
+		}
+
+		$from = " FROM ".MAIN_DB_PREFIX."paiement p
+			LEFT JOIN ".MAIN_DB_PREFIX."c_paiement cp ON cp.id = p.fk_paiement
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_facture pf ON pf.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."facture f ON f.rowid = pf.fk_facture
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_object po ON po.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."commande c ON po.objecttype = 'Commande' AND c.rowid = po.fk_object
+			LEFT JOIN ".MAIN_DB_PREFIX."propal pr ON po.objecttype = 'Propal' AND pr.rowid = po.fk_object
+			WHERE ".$where;
+
+		$total = null;
+		$resql = static::$db->query("SELECT COUNT(DISTINCT p.rowid) AS nb".$from);
+		if ($resql && ($o = static::$db->fetch_object($resql))) {
+			$total = (int) $o->nb;
+		}
+
+		$sql = "SELECT DISTINCT p.rowid, p.ref, p.datep, p.amount, p.num_paiement,
+				p.fk_paiement AS fk_mode, cp.code AS mode_code, cp.libelle AS mode_label,
+				COALESCE(f.fk_soc, c.fk_soc, pr.fk_soc) AS socid"
+			.$from
+			." ORDER BY p.datep DESC, p.rowid DESC"
+			.static::$db->plimit($limit, $offset);
+
+		$rows = array();
+		$resql = static::$db->query($sql);
+		if ($resql) {
+			while ($obj = static::$db->fetch_object($resql)) {
+				$obj->objects = array();
+				$rows['payment:'.$obj->rowid] = $obj;
+			}
+		}
+
+		// Objets métier rattachés, en une requête pour tout le lot (pas de N+1)
+		if ($rows) {
+			$ids = array();
+			foreach ($rows as $r) {
+				$ids[] = (int) $r->rowid;
+			}
+			$idlist = implode(',', $ids);
+			$sql2 = "SELECT pf.fk_paiement, 'Facture' AS objecttype, f.rowid AS fk_object, f.ref
+					FROM ".MAIN_DB_PREFIX."paiement_facture pf
+					INNER JOIN ".MAIN_DB_PREFIX."facture f ON f.rowid = pf.fk_facture
+					WHERE pf.fk_paiement IN (".$idlist.")
+				UNION ALL
+				SELECT po.fk_paiement, po.objecttype, po.fk_object,
+					COALESCE(c.ref, pr.ref) AS ref
+					FROM ".MAIN_DB_PREFIX."paiement_object po
+					LEFT JOIN ".MAIN_DB_PREFIX."commande c ON po.objecttype = 'Commande' AND c.rowid = po.fk_object
+					LEFT JOIN ".MAIN_DB_PREFIX."propal pr ON po.objecttype = 'Propal' AND pr.rowid = po.fk_object
+					WHERE po.fk_paiement IN (".$idlist.")";
+			$resql2 = static::$db->query($sql2);
+			if ($resql2) {
+				while ($o = static::$db->fetch_object($resql2)) {
+					$k = 'payment:'.$o->fk_paiement;
+					if (isset($rows[$k])) {
+						$rows[$k]->objects[$o->objecttype.':'.$o->fk_object] =
+							array('type' => $o->objecttype, 'id' => $o->fk_object, 'ref' => $o->ref);
+					}
+				}
+			}
+		}
+
+		return array('rows' => $rows, 'total' => $total, 'truncated' => false);
+	}
+
 	public static function payment_invoices($id)
 	{
 		if (!is_numeric($id))
