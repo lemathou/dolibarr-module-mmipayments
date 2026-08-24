@@ -174,6 +174,83 @@ class mmi_payments
 	}
 
 	/**
+	 * Objets du CYCLE de vente auquel appartient un objet : devis, commande(s) et
+	 * facture(s) qui se répondent.
+	 *
+	 * Le règlement d'une affaire ne se lit pas au niveau d'un seul document : un
+	 * acompte est encaissé sur le devis, le solde sur la facture, et l'un comme
+	 * l'autre concernent la même affaire. Regarder l'onglet Paiements d'un devis sans
+	 * voir ce qui a été réglé sur la facture qui en découle donnerait une réponse
+	 * fausse à « ce client a-t-il payé ? ».
+	 *
+	 * Les liens de llx_element_element se parcourent dans les DEUX sens : selon la
+	 * façon dont les documents ont été créés, la facture est tantôt la cible du devis,
+	 * tantôt sa source.
+	 *
+	 * @param string $objecttype 'Facture' | 'Commande' | 'Propal'
+	 * @param int    $id         Id de l'objet
+	 * @return array             Couples array('type' => …, 'id' => …), objet de départ inclus
+	 */
+	public static function cycle_objects($objecttype, $id)
+	{
+		$id = (int) $id;
+		$map = array('propal' => 'Propal', 'commande' => 'Commande', 'facture' => 'Facture');
+		if (!in_array($objecttype, $map)) {
+			return array();
+		}
+
+		$cycle = array($objecttype.':'.$id => array('type' => $objecttype, 'id' => $id));
+		$todo = array($objecttype.':'.$id => array('type' => $objecttype, 'id' => $id));
+
+		// Parcours transitif borné : depuis une facture, on veut retrouver le devis
+		// dont elle découle ET les factures sœurs issues du même devis. Un seul niveau
+		// rendrait la vue asymétrique — le devis verrait tout, la facture presque rien.
+		// Deux sauts suffisent à couvrir devis <-> commande <-> facture ; la borne
+		// évite de dériver dans un graphe de liens qui peut être large.
+		$MAX_DEPTH = 2;
+		$MAX_OBJECTS = 50;
+
+		for ($depth = 0; $depth < $MAX_DEPTH && $todo && count($cycle) < $MAX_OBJECTS; $depth++) {
+			$conds = array();
+			foreach ($todo as $o) {
+				$lower = array_search($o['type'], $map);
+				$conds[] = "(sourcetype = '".static::$db->escape($lower)."' AND fk_source = ".((int) $o['id']).")";
+				$conds[] = "(targettype = '".static::$db->escape($lower)."' AND fk_target = ".((int) $o['id']).")";
+			}
+			$sql = "SELECT sourcetype AS s_type, fk_source AS s_id, targettype AS t_type, fk_target AS t_id
+				FROM ".MAIN_DB_PREFIX."element_element
+				WHERE ".implode(' OR ', $conds);
+
+			$resql = static::$db->query($sql);
+			if (!$resql) {
+				break;
+			}
+			$todo = array();
+			while ($obj = static::$db->fetch_object($resql)) {
+				// element_element mêle expéditions, commandes fournisseur… : on ne garde
+				// que les documents qui portent des règlements.
+				foreach (array(array($obj->s_type, $obj->s_id), array($obj->t_type, $obj->t_id)) as $cand) {
+					$t = strtolower($cand[0]);
+					if (!isset($map[$t])) {
+						continue;
+					}
+					$k = $map[$t].':'.((int) $cand[1]);
+					if (isset($cycle[$k])) {
+						continue;
+					}
+					$cycle[$k] = array('type' => $map[$t], 'id' => (int) $cand[1]);
+					$todo[$k] = $cycle[$k];
+					if (count($cycle) >= $MAX_OBJECTS) {
+						return $cycle;
+					}
+				}
+			}
+		}
+
+		return $cycle;
+	}
+
+	/**
 	 * Liste des règlements (tous modes) rattachés à un objet métier.
 	 *
 	 * Agrège les paiements liés aux factures (paiement_facture) et aux
@@ -216,13 +293,22 @@ class mmi_payments
 							OR (po2.objecttype = 'Client' AND po2.fk_object = ".$id.")";
 				break;
 			case 'Facture':
-				$filter = "SELECT pf2.fk_paiement FROM ".$p."paiement_facture pf2
-					WHERE pf2.fk_facture = ".$id;
-				break;
 			case 'Commande':
 			case 'Propal':
-				$filter = "SELECT po2.fk_paiement FROM ".$p."paiement_object po2
-					WHERE po2.objecttype = '".static::$db->escape($objecttype)."' AND po2.fk_object = ".$id;
+				// Tout le cycle devis / commande / facture, pas le seul document ouvert :
+				// un acompte encaissé sur le devis et le solde réglé sur la facture
+				// concernent la même affaire (cf. cycle_objects()).
+				$parts = array();
+				foreach (static::cycle_objects($objecttype, $id) as $o) {
+					if ($o['type'] === 'Facture') {
+						$parts[] = "SELECT pf2.fk_paiement FROM ".$p."paiement_facture pf2
+							WHERE pf2.fk_facture = ".((int) $o['id']);
+					} else {
+						$parts[] = "SELECT po2.fk_paiement FROM ".$p."paiement_object po2
+							WHERE po2.objecttype = '".static::$db->escape($o['type'])."' AND po2.fk_object = ".((int) $o['id']);
+					}
+				}
+				$filter = implode(" UNION ", $parts);
 				break;
 			default:
 				return array();
@@ -319,13 +405,17 @@ class mmi_payments
 
 		foreach (static::object_payments($objecttype, $id, 0) as $p) {
 			$key = 'payment:'.$p->rowid;
+			// Le règlement remonté par le cycle peut être rattaché à un AUTRE document
+			// (typiquement : réglé sur la facture alors qu'on regarde le devis). Le
+			// masquer serait faux, l'afficher sans le dire le serait tout autant.
+			$attached = static::attachment_note($objecttype, $id, $p->objects);
 			$rows[$key] = array(
 				'date'       => static::$db->jdate($p->datep),
 				'amount'     => (float) $p->amount,
 				'ref'        => '<a href="'.DOL_URL_ROOT.'/compta/paiement/card.php?id='.$p->rowid.'">'
 					.img_picto('', 'payment', 'class="paddingright"')
 					.dol_escape_htmltag($p->ref ? $p->ref : '#'.$p->rowid).'</a>',
-				'objects'    => static::render_linked_objects($p->objects),
+				'objects'    => static::render_linked_objects($p->objects).$attached,
 				'mode'       => dol_escape_htmltag(static::mode_label($p))
 					.(!empty($p->num_paiement) ? ' <span class="opacitymedium small">('.dol_escape_htmltag($p->num_paiement).')</span>' : ''),
 				'status'     => '<span class="badge badge-status4 badge-status">'.$langs->trans("MMIPaymentsStatusReceived").'</span>',
@@ -335,9 +425,16 @@ class mmi_payments
 			$index[(int) $p->rowid] = $key;
 		}
 
-		// Apports des modules de paiement (tentatives, échecs, échéanciers, actions)
+		// Apports des modules de paiement (tentatives, échecs, échéanciers, actions).
+		// On leur transmet le CYCLE déjà résolu : sans lui, ils filtreraient sur le seul
+		// document ouvert et l'onglet deviendrait incohérent — les règlements de la
+		// facture liée s'afficheraient, mais pas les tentatives CB de cette facture.
 		if (is_object($hookmanager)) {
-			$parameters = array('objecttype' => $objecttype, 'id' => (int) $id);
+			$parameters = array(
+				'objecttype' => $objecttype,
+				'id'         => (int) $id,
+				'cycle'      => static::cycle_objects($objecttype, $id),
+			);
 			$dummy = new stdClass();
 			$action = '';
 			$reshook = $hookmanager->executeHooks('addPaymentRows', $parameters, $dummy, $action);
@@ -368,6 +465,36 @@ class mmi_payments
 		});
 
 		return $rows;
+	}
+
+	/**
+	 * Mention à accoler à un règlement remonté par le cycle mais NON rattaché au
+	 * document ouvert — « réglé sur FA2504-000545 » quand on regarde le devis.
+	 *
+	 * Silencieux quand le règlement porte bien sur le document courant : la mention
+	 * ne doit attirer l'œil que là où elle apprend quelque chose.
+	 *
+	 * @param string $objecttype Type du document ouvert
+	 * @param int    $id         Id du document ouvert
+	 * @param array  $objects    Objets rattachés au règlement
+	 */
+	public static function attachment_note($objecttype, $id, $objects)
+	{
+		global $langs;
+
+		if (empty($objects)) {
+			return '';
+		}
+		if (isset($objects[$objecttype.':'.((int) $id)])) {
+			return '';	// rattaché au document ouvert : rien à signaler
+		}
+
+		// Les documents porteurs sont déjà affichés dans la colonne : les répéter
+		// ferait du bruit. Le marqueur ne dit que ce qu'elle ne dit pas — que ce
+		// règlement ne porte pas sur le document ouvert.
+		return ' <span class="badge badge-status1 badge-status" title="'
+			.dol_escape_htmltag($langs->trans('MMIPaymentsAttachedElsewhereHelp')).'">'
+			.dol_escape_htmltag($langs->trans('MMIPaymentsAttachedElsewhere')).'</span>';
 	}
 
 	/**

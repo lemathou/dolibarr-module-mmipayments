@@ -23,8 +23,16 @@ paiement complète la vue avec ce que lui seul sait.
 2. Implémenter `addPaymentRows($parameters, &$object, &$action, $hookmanager)`
    dans la classe d'actions, et remplir `$this->results['payment_rows']`.
 
-`$parameters` porte `objecttype` (`Client` | `Facture` | `Commande` | `Propal`)
-et `id`, l'identifiant de l'objet affiché.
+`$parameters` porte `objecttype` (`Client` | `Facture` | `Commande` | `Propal`),
+`id` l'identifiant de l'objet affiché, et `cycle` — les documents du cycle de vente
+auquel il appartient (devis, commandes, factures qui se répondent), résolus une fois
+par le socle.
+
+**Utilisez `cycle`, pas seulement `id`.** Un acompte encaissé sur le devis et le solde
+réglé sur la facture concernent la même affaire : le socle remonte tout le cycle, et un
+module qui filtrerait sur le seul document ouvert rendrait la vue incohérente — les
+règlements de la facture liée s'afficheraient, mais pas les tentatives de cette même
+facture. Pour un tiers (`Client`), `cycle` est vide : le périmètre est le tiers entier.
 
 Chaque ligne retournée est un tableau associatif :
 

@@ -1,5 +1,12 @@
 # CHANGELOG MMIPAYMENTS FOR [DOLIBARR ERP CRM](https://www.dolibarr.org)
 
+## 1.4
+
+- L'onglet « Paiements » d'un devis, d'une commande ou d'une facture montre désormais les règlements de **tout le cycle** devis / commande / facture, et plus du seul document ouvert. Un acompte encaissé sur le devis et le solde réglé sur la facture concernent la même affaire : ne montrer que le document ouvert répondait faux à « ce client a-t-il payé ? ». Même périmètre que le bloc paiements de la fiche devis (`mmi_payments::paiements()`) — vérifié identique sur 12 devis.
+- `mmi_payments::cycle_objects()` : résolution du cycle via `llx_element_element`, dans les **deux sens** (selon la façon dont les documents ont été créés, la facture est tantôt la cible du devis, tantôt sa source) et de façon **transitive bornée** — depuis une facture on retrouve ainsi le devis dont elle découle ET ses factures sœurs. Sans cela la vue était asymétrique : le devis voyait tout, la facture presque rien.
+- Un règlement remonté par le cycle mais **non rattaché au document ouvert** est marqué « autre document » (le détail des documents porteurs reste dans la colonne « Objet lié », le marqueur ne le répète pas).
+- Le cycle résolu est transmis aux modules de paiement dans les paramètres du hook `addPaymentRows` : sans lui, ils filtreraient sur le seul document ouvert et l'onglet deviendrait incohérent — les règlements de la facture liée s'afficheraient, mais pas les tentatives CB de cette même facture.
+
 ## 1.3
 
 - **Entrée de menu** sous Facturation → Règlements : la liste globale devient accessible. Jusqu'ici le module n'avait aucune entrée de menu ni onglet — tout passait par la fiche d'un tiers.
