@@ -1,5 +1,14 @@
 # CHANGELOG MMIPAYMENTS FOR [DOLIBARR ERP CRM](https://www.dolibarr.org)
 
+## 1.3
+
+- **Entrée de menu** sous Facturation → Règlements : la liste globale devient accessible. Jusqu'ici le module n'avait aucune entrée de menu ni onglet — tout passait par la fiche d'un tiers.
+- Réécriture de `list.php`, qui était un brouillon jamais exposé (aucun contrôle de droits, entité et préfixe de table en dur, pas de pagination ni de filtres) : droit `facture/lire`, pagination, filtres tiers et période, liens vers les paiements et les objets métier, total.
+- **Vue « Paiements à recréer »** : les transactions abouties côté banque dont le paiement Dolibarr n'existe pas (ou plus), sur l'ensemble du parc. Ces lignes ne peuvent pas venir du socle — une transaction sans paiement n'est par définition pas dans `llx_paiement` : elles sont contribuées par les modules de paiement via le hook `addGlobalPaymentRows` (contexte `mmipaymentslist`). C'est la réponse à la question qui n'en avait aucune : où sont les régularisations à faire ?
+- `mmi_payments::global_payment_rows()` : règlements paginés en SQL pour le mode « Règlements », agrégation des contributions des modules pour le mode « à recréer ». Le plafonnement du second est **affiché** et jamais silencieux.
+
+> Déploiement : contrairement aux hooks et aux onglets (une const), une entrée de menu se matérialise par une ligne dans `llx_menu`. Il faut donc appeler `insert_menus()` du descripteur (ou réactiver le module) après la mise à jour du code.
+
 ## 1.2
 
 - Onglet **Paiements** sur le tiers, le devis, la commande et la facture (`payments.php`) : règlements rattachés à l'objet, tous modes confondus.

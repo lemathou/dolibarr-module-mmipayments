@@ -80,3 +80,7 @@ MMIPaymentsTotalReceived = Total encaissé
 MMIPaymentsTabTitle = Paiements
 MMIPaymentsStatusReceived = Encaissé
 MMIPaymentsNoPaymentForObject = Aucun règlement ni tentative de paiement.
+MMIPaymentsModePayments = Règlements
+MMIPaymentsModeAttempts = Paiements à recréer
+MMIPaymentsNoModuleProvidesAttempts = Aucun module de paiement installé ne fournit de tentatives de paiement.
+MMIPaymentsListTruncated = Liste plafonnée aux %s premières lignes sur %s. Affinez la recherche pour voir les suivantes.
