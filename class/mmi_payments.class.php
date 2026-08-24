@@ -441,6 +441,9 @@ class mmi_payments
 		$offset = max(0, (int) $filters['offset']);
 
 		if ($filters['mode'] === 'attempts') {
+			// Le mode « tentatives » porte aujourd'hui la question des régularisations :
+			// on le dit explicitement aux modules plutôt que de leur laisser déduire.
+			$filters['missing_payment'] = 1;
 			$rows = array();
 			$truncated = false;
 			if (is_object($hookmanager)) {
