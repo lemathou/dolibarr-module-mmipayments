@@ -355,7 +355,9 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		if ($hasmore)
 			$payments = array_slice($payments, 0, $max, true);
 
-		$listurl = dol_buildpath('/custom/mmipayments/societe_payments.php', 1).'?socid='.$object->id;
+		// Vue complète : l'onglet « Paiements », qui agrège règlements et tentatives
+		// de tous les moyens de paiement (RM2803).
+		$listurl = dol_buildpath('/mmipayments/payments.php', 1).'?objecttype=Client&id='.$object->id;
 
 		$out = '';
 		$out .= '<div class="div-table-responsive-no-min">';
