@@ -436,15 +436,24 @@ class mmi_payments
 		if (empty($infos['date'])) {
 			$infos['date'] = dol_now();
 		}
-		if (is_numeric(strpos($infos['date'], '/'))) {
-			$date_e = explode('/', $infos['date']);
-			$date = implode('-', array_reverse($date_e));
+		// Paiement::datepaye attend un TIMESTAMP. Ne jamais lui passer une chaîne :
+		// Dolibarr la transmet telle quelle à date() (create() -> getNextNumRef() ->
+		// mod_payment_ant -> get_next_value()), ce qui est toléré en PHP 7 (conversion
+		// implicite) mais lève une TypeError fatale à partir de PHP 8.
+		$date = $infos['date'];
+		if (is_numeric($date)) {
+			// Timestamp déjà (dol_now(), ou valeur fournie telle quelle par l'appelant)
+			$date = (int) $date;
 		}
 		else {
-			$date = $infos['date'];
+			// Chaîne : 'JJ/MM/AAAA' (saisie utilisateur) ou date/heure interprétable
+			// ('AAAA-MM-JJ [HH:MM:SS]', ISO 8601 renvoyé par une API...)
+			if (strpos($date, '/') !== false)
+				$date = implode('-', array_reverse(explode('/', $date)));
+			$timestamp = strtotime($date);
+			// Date illisible : on ne crée pas un paiement daté de 1970
+			$date = ($timestamp === false) ? dol_now() : $timestamp;
 		}
-		if (!is_numeric(strpos($date, ' ')))
-			$date .= ' 00:00:00';
 
 		$paiement->datepaye = $date;
 		$paiement->amounts = [];

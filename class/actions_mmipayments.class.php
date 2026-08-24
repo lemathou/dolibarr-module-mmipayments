@@ -344,7 +344,7 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		if (empty($object->id) || !$user->hasRight('societe', 'lire'))
 			return 0;
 
-		$langs->loadLangs(array('mmipayments@mmipayments', 'compta', 'bills', 'banks'));
+		$langs->loadLangs(array('mmipayments@mmipayments', 'compta', 'bills', 'banks', 'other'));
 
 		$max = 10;
 		$payments = mmi_payments::client_payments($object->id, $max + 1);
