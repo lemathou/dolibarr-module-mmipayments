@@ -4,6 +4,69 @@
 
 Description of the module...
 
+## Onglet « Paiements » et point d'extension
+
+Le module pose un onglet **Paiements** sur le tiers, le devis, la commande et la
+facture (`payments.php`). Il y liste les règlements rattachés à l'objet, tous
+modes confondus — factures via `paiement_facture`, devis / commandes / tiers via
+`paiement_object`.
+
+Ce que le socle **ne peut pas** connaître, ce sont les **tentatives** : la table
+`llx_paiement` ne contient que les paiements aboutis. Un paiement CB refusé, une
+échéance d'un 3x, un motif de refus n'existent que dans les tables du module de
+paiement concerné. D'où le point d'extension ci-dessous : chaque module de
+paiement complète la vue avec ce que lui seul sait.
+
+### Contribuer des lignes depuis un module de paiement
+
+1. Déclarer le contexte `mmipaymentstab` dans les `hooks` du descripteur du module.
+2. Implémenter `addPaymentRows($parameters, &$object, &$action, $hookmanager)`
+   dans la classe d'actions, et remplir `$this->results['payment_rows']`.
+
+`$parameters` porte `objecttype` (`Client` | `Facture` | `Commande` | `Propal`)
+et `id`, l'identifiant de l'objet affiché.
+
+Chaque ligne retournée est un tableau associatif :
+
+| Clé | Type | Rôle |
+|---|---|---|
+| `date` | int | timestamp — sert au tri chronologique (requis) |
+| `amount` | float | montant |
+| `ref` | string | HTML — référence, généralement un lien |
+| `objects` | string | HTML — objets métier rattachés |
+| `mode` | string | HTML — libellé du moyen de paiement |
+| `status` | string | HTML — état (badge, motif de refus en infobulle…) |
+| `actions` | string | HTML — actions proposées (formulaire POST) |
+| `is_payment` | bool | `true` = encaissement réel (compte dans le total) ; `false` = tentative sans suite, affichée en retrait |
+| `fk_paiement` | int | *optionnel* — voir « enrichissement » ci-dessous |
+
+### Enrichir plutôt que dupliquer
+
+Une transaction aboutie est connue **des deux côtés** : du socle comme règlement,
+du module comme tentative réussie. Retourner une ligne pour elle la ferait
+apparaître deux fois.
+
+Dans ce cas, renseigner `fk_paiement` avec l'identifiant du règlement au lieu de
+composer une ligne complète : les champs fournis **complètent** la ligne existante
+— typiquement `status` et `actions`, que le module sait préciser — sans écraser
+ceux qu'il ne fournit pas.
+
+### Ordre d'affichage
+
+Les lignes de tous les modules sont fusionnées puis triées par date décroissante :
+la tentative refusée du 12 et l'encaissement du 14 se lisent sur la même
+chronologie. Quand deux modules interviennent sur une même ligne, l'ordre
+d'exécution se règle par la propriété `priority` de leur classe d'actions
+(défaut Dolibarr : 50 ; plus grand = exécuté plus tard).
+
+### Actions
+
+Le socle ne porte **aucune** action : recréer un paiement supprimé, relancer une
+échéance sont des gestes propres à un moyen de paiement. Le module rend son
+formulaire dans `actions`, et traite le POST via le hook `doPaymentTabAction`
+(même contexte). Retourner une valeur non nulle déclenche la redirection en GET
+qui évite le re-POST.
+
 <!--
 ![Screenshot mmipayments](img/screenshot_mmipayments.png?raw=true "MMIPayments"){imgmd}
 -->

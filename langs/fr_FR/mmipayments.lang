@@ -77,3 +77,6 @@ MMIPaymentsSeeAll = Voir tous les règlements
 MMIPaymentsAllPayments = Règlements du tiers
 MMIPaymentsNoPayment = Aucun règlement pour ce tiers.
 MMIPaymentsTotalReceived = Total encaissé
+MMIPaymentsTabTitle = Paiements
+MMIPaymentsStatusReceived = Encaissé
+MMIPaymentsNoPaymentForObject = Aucun règlement ni tentative de paiement.

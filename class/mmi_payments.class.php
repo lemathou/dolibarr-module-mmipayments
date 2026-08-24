@@ -161,22 +161,72 @@ class mmi_payments
 	/**
 	 * Liste des règlements (tous modes) reçus d'un tiers.
 	 *
-	 * Agrège les paiements rattachés aux factures du tiers (paiement_facture)
-	 * et aux commandes / devis du tiers (paiement_object). Un même règlement
-	 * peut être lié à plusieurs objets (ex: acompte sur commande puis rattaché
-	 * à la facture) : ces objets sont collectés dans $obj->objects, dédupliqués,
-	 * et le règlement n'apparaît qu'une fois.
+	 * Conservé pour les appelants historiques (bloc « Derniers règlements » de
+	 * l'onglet Client) : simple raccourci sur object_payments().
 	 *
 	 * @param int $socid  Id du tiers
 	 * @param int $limit  Nombre max de règlements retournés (0 = pas de limite)
-	 * @return array      Tableau d'objets paiement indexé par rowid, trié du + récent au + ancien.
-	 *                    Chaque objet porte ->objects : array de array('type','id','ref').
+	 * @return array      cf. object_payments()
 	 */
 	public static function client_payments($socid, $limit = 0)
 	{
-		$socid = (int) $socid;
-		if ($socid <= 0)
+		return static::object_payments('Client', $socid, $limit);
+	}
+
+	/**
+	 * Liste des règlements (tous modes) rattachés à un objet métier.
+	 *
+	 * Agrège les paiements liés aux factures (paiement_facture) et aux
+	 * commandes / devis / tiers (paiement_object). Un même règlement peut être
+	 * lié à plusieurs objets (ex: acompte sur commande puis rattaché à la
+	 * facture) : ces objets sont collectés dans $obj->objects, dédupliqués, et
+	 * le règlement n'apparaît qu'une fois.
+	 *
+	 * Le filtre porte sur l'IDENTIFIANT DU RÈGLEMENT (sous-requête), pas sur les
+	 * jointures : on récupère ainsi TOUS les objets rattachés à chaque règlement
+	 * retenu, et pas seulement celui par lequel on l'a trouvé.
+	 *
+	 * @param string $objecttype 'Client' | 'Facture' | 'Commande' | 'Propal'
+	 * @param int    $id         Id de l'objet
+	 * @param int    $limit      Nombre max de règlements retournés (0 = pas de limite)
+	 * @return array             Tableau d'objets paiement indexé par rowid, trié du + récent au + ancien.
+	 *                           Chaque objet porte ->objects : array de array('type','id','ref').
+	 */
+	public static function object_payments($objecttype, $id, $limit = 0)
+	{
+		$id = (int) $id;
+		if ($id <= 0)
 			return array();
+
+		$p = MAIN_DB_PREFIX;
+		switch ($objecttype) {
+			case 'Client':
+			case 'Societe':
+				// Règlements du tiers : via ses factures, ses commandes/devis,
+				// ou rattachés directement au tiers.
+				$filter = "SELECT pf2.fk_paiement FROM ".$p."paiement_facture pf2
+						INNER JOIN ".$p."facture f2 ON f2.rowid = pf2.fk_facture
+						WHERE f2.fk_soc = ".$id."
+					UNION
+					SELECT po2.fk_paiement FROM ".$p."paiement_object po2
+						LEFT JOIN ".$p."commande c2 ON po2.objecttype = 'Commande' AND c2.rowid = po2.fk_object
+						LEFT JOIN ".$p."propal pr2 ON po2.objecttype = 'Propal' AND pr2.rowid = po2.fk_object
+						WHERE c2.fk_soc = ".$id."
+							OR pr2.fk_soc = ".$id."
+							OR (po2.objecttype = 'Client' AND po2.fk_object = ".$id.")";
+				break;
+			case 'Facture':
+				$filter = "SELECT pf2.fk_paiement FROM ".$p."paiement_facture pf2
+					WHERE pf2.fk_facture = ".$id;
+				break;
+			case 'Commande':
+			case 'Propal':
+				$filter = "SELECT po2.fk_paiement FROM ".$p."paiement_object po2
+					WHERE po2.objecttype = '".static::$db->escape($objecttype)."' AND po2.fk_object = ".$id;
+				break;
+			default:
+				return array();
+		}
 
 		$sql = "SELECT p.rowid, p.ref, p.datep, p.datec, p.amount, p.num_paiement, p.note,
 				p.fk_paiement AS fk_mode, cp.code AS mode_code, cp.libelle AS mode_label,
@@ -191,7 +241,7 @@ class mmi_payments
 			LEFT JOIN ".MAIN_DB_PREFIX."commande c ON po.objecttype = 'Commande' AND c.rowid = po.fk_object
 			LEFT JOIN ".MAIN_DB_PREFIX."propal pr ON po.objecttype = 'Propal' AND pr.rowid = po.fk_object
 			WHERE p.entity IN (".getEntity('facture').")
-				AND (f.fk_soc = ".$socid." OR c.fk_soc = ".$socid." OR pr.fk_soc = ".$socid.")
+				AND p.rowid IN (".$filter.")
 			ORDER BY p.datep DESC, p.rowid DESC";
 
 		$resql = static::$db->query($sql);
@@ -221,6 +271,146 @@ class mmi_payments
 			$l = array_slice($l, 0, $limit, true);
 
 		return $l;
+	}
+
+	/**
+	 * Lignes de l'onglet « Paiements » : règlements du socle + apports des modules
+	 * de paiement, fusionnés et triés du plus récent au plus ancien.
+	 *
+	 * POINT D'EXTENSION — hook `addPaymentRows`, contexte `mmipaymentstab`.
+	 *
+	 * Un module de paiement remplit $this->results['payment_rows'] avec un tableau
+	 * de lignes. Chaque ligne est un tableau associatif :
+	 *
+	 *   'date'       (int, requis)  timestamp, sert au tri chronologique
+	 *   'amount'     (float)        montant
+	 *   'ref'        (string)       HTML — référence, généralement un lien
+	 *   'objects'    (string)       HTML — objets métier rattachés
+	 *   'mode'       (string)       HTML — libellé du moyen de paiement
+	 *   'status'     (string)       HTML — état (badge, motif de refus en infobulle…)
+	 *   'actions'    (string)       HTML — actions proposées (formulaire POST)
+	 *   'is_payment' (bool)         true = encaissement réel (compte dans le total),
+	 *                               false = tentative sans suite (affichée en retrait)
+	 *   'fk_paiement'(int, option.) ENRICHISSEMENT : si la ligne se rapporte à un
+	 *                               règlement déjà listé par le socle, indiquer son id
+	 *                               plutôt que d'ajouter une ligne. Les champs fournis
+	 *                               COMPLÈTENT la ligne existante (typiquement 'mode',
+	 *                               'status' et 'actions' précisés par le module) au
+	 *                               lieu de la dupliquer.
+	 *
+	 * Sans ce mécanisme d'enrichissement, une transaction aboutie apparaîtrait deux
+	 * fois : une fois comme règlement (vu du socle) et une fois comme tentative
+	 * réussie (vu du module).
+	 *
+	 * L'ordre d'exécution entre modules se règle par la propriété `priority` de leur
+	 * classe d'actions (défaut Dolibarr : 50 ; plus grand = plus tard).
+	 *
+	 * @param string      $objecttype  'Client' | 'Facture' | 'Commande' | 'Propal'
+	 * @param int         $id          Id de l'objet porteur
+	 * @param HookManager $hookmanager Gestionnaire de hooks de la page (contexte déjà initialisé)
+	 * @return array                   Lignes prêtes à l'affichage, triées par date décroissante
+	 */
+	public static function payment_rows($objecttype, $id, $hookmanager = null)
+	{
+		global $langs, $conf;
+
+		$rows = array();
+		$index = array();	// fk_paiement -> clé dans $rows, pour l'enrichissement
+
+		foreach (static::object_payments($objecttype, $id, 0) as $p) {
+			$key = 'payment:'.$p->rowid;
+			$rows[$key] = array(
+				'date'       => static::$db->jdate($p->datep),
+				'amount'     => (float) $p->amount,
+				'ref'        => '<a href="'.DOL_URL_ROOT.'/compta/paiement/card.php?id='.$p->rowid.'">'
+					.img_picto('', 'payment', 'class="paddingright"')
+					.dol_escape_htmltag($p->ref ? $p->ref : '#'.$p->rowid).'</a>',
+				'objects'    => static::render_linked_objects($p->objects),
+				'mode'       => dol_escape_htmltag(static::mode_label($p))
+					.(!empty($p->num_paiement) ? ' <span class="opacitymedium small">('.dol_escape_htmltag($p->num_paiement).')</span>' : ''),
+				'status'     => '<span class="badge badge-status4 badge-status">'.$langs->trans("MMIPaymentsStatusReceived").'</span>',
+				'actions'    => '',
+				'is_payment' => true,
+			);
+			$index[(int) $p->rowid] = $key;
+		}
+
+		// Apports des modules de paiement (tentatives, échecs, échéanciers, actions)
+		if (is_object($hookmanager)) {
+			$parameters = array('objecttype' => $objecttype, 'id' => (int) $id);
+			$dummy = new stdClass();
+			$action = '';
+			$reshook = $hookmanager->executeHooks('addPaymentRows', $parameters, $dummy, $action);
+			if ($reshook >= 0 && !empty($hookmanager->resArray['payment_rows'])) {
+				foreach ($hookmanager->resArray['payment_rows'] as $i => $row) {
+					$fk = !empty($row['fk_paiement']) ? (int) $row['fk_paiement'] : 0;
+					if ($fk && isset($index[$fk])) {
+						// Enrichissement d'un règlement déjà listé : pas de doublon
+						foreach (array('mode', 'status', 'actions', 'objects', 'ref') as $f) {
+							if (isset($row[$f]) && $row[$f] !== '') {
+								$rows[$index[$fk]][$f] = $row[$f];
+							}
+						}
+						continue;
+					}
+					$row += array('date' => 0, 'amount' => 0, 'ref' => '', 'objects' => '',
+						'mode' => '', 'status' => '', 'actions' => '', 'is_payment' => false);
+					$rows['hook:'.$i] = $row;
+				}
+			}
+		}
+
+		uasort($rows, function ($a, $b) {
+			if ($a['date'] == $b['date']) {
+				return 0;
+			}
+			return ($a['date'] > $b['date']) ? -1 : 1;
+		});
+
+		return $rows;
+	}
+
+	/**
+	 * Libellé traduit d'un mode de règlement (repli sur le libellé de c_paiement).
+	 */
+	public static function mode_label($p)
+	{
+		global $langs;
+		if (empty($p->mode_code)) {
+			return $p->mode_label ? $p->mode_label : '';
+		}
+		$key = 'PaymentType'.$p->mode_code;
+		$label = $langs->trans($key);
+		if ($label != $key) {
+			return $label;
+		}
+		return $p->mode_label ? $p->mode_label : $p->mode_code;
+	}
+
+	/**
+	 * Rendu HTML des objets métier (facture / commande / devis) liés à un règlement.
+	 *
+	 * @param array $objects  array de array('type','id','ref')
+	 */
+	public static function render_linked_objects($objects)
+	{
+		if (empty($objects)) {
+			return '<span class="opacitymedium">-</span>';
+		}
+		$links = array();
+		foreach ($objects as $o) {
+			$url = '';
+			if ($o['type'] == 'Facture') {
+				$url = DOL_URL_ROOT.'/compta/facture/card.php?id='.$o['id'];
+			} elseif ($o['type'] == 'Commande') {
+				$url = DOL_URL_ROOT.'/commande/card.php?id='.$o['id'];
+			} elseif ($o['type'] == 'Propal') {
+				$url = DOL_URL_ROOT.'/comm/propal/card.php?id='.$o['id'];
+			}
+			$label = dol_escape_htmltag($o['ref'] ? $o['ref'] : $o['type'].' #'.$o['id']);
+			$links[] = $url ? '<a href="'.$url.'">'.$label.'</a>' : $label;
+		}
+		return implode(', ', $links);
 	}
 
 	public static function payment_invoices($id)
