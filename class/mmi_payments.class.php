@@ -158,6 +158,71 @@ class mmi_payments
 		return $regle;
 	}
 
+	/**
+	 * Liste des règlements (tous modes) reçus d'un tiers.
+	 *
+	 * Agrège les paiements rattachés aux factures du tiers (paiement_facture)
+	 * et aux commandes / devis du tiers (paiement_object). Un même règlement
+	 * peut être lié à plusieurs objets (ex: acompte sur commande puis rattaché
+	 * à la facture) : ces objets sont collectés dans $obj->objects, dédupliqués,
+	 * et le règlement n'apparaît qu'une fois.
+	 *
+	 * @param int $socid  Id du tiers
+	 * @param int $limit  Nombre max de règlements retournés (0 = pas de limite)
+	 * @return array      Tableau d'objets paiement indexé par rowid, trié du + récent au + ancien.
+	 *                    Chaque objet porte ->objects : array de array('type','id','ref').
+	 */
+	public static function client_payments($socid, $limit = 0)
+	{
+		$socid = (int) $socid;
+		if ($socid <= 0)
+			return array();
+
+		$sql = "SELECT p.rowid, p.ref, p.datep, p.datec, p.amount, p.num_paiement, p.note,
+				p.fk_paiement AS fk_mode, cp.code AS mode_code, cp.libelle AS mode_label,
+				pf.fk_facture, f.ref AS facture_ref,
+				po.objecttype AS po_type, po.fk_object AS po_id,
+				c.ref AS commande_ref, pr.ref AS propal_ref
+			FROM ".MAIN_DB_PREFIX."paiement p
+			LEFT JOIN ".MAIN_DB_PREFIX."c_paiement cp ON cp.id = p.fk_paiement
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_facture pf ON pf.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."facture f ON f.rowid = pf.fk_facture
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_object po ON po.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."commande c ON po.objecttype = 'Commande' AND c.rowid = po.fk_object
+			LEFT JOIN ".MAIN_DB_PREFIX."propal pr ON po.objecttype = 'Propal' AND pr.rowid = po.fk_object
+			WHERE p.entity IN (".getEntity('facture').")
+				AND (f.fk_soc = ".$socid." OR c.fk_soc = ".$socid." OR pr.fk_soc = ".$socid.")
+			ORDER BY p.datep DESC, p.rowid DESC";
+
+		$resql = static::$db->query($sql);
+		if (!$resql)
+			return array();
+
+		$l = array();
+		while ($obj = static::$db->fetch_object($resql)) {
+			if (!isset($l[$obj->rowid])) {
+				$obj->objects = array();
+				$l[$obj->rowid] = $obj;
+			}
+			// Collecte (dédupliquée) des objets métier rattachés à ce règlement
+			if (!empty($obj->fk_facture)) {
+				$l[$obj->rowid]->objects['Facture:'.$obj->fk_facture] =
+					array('type' => 'Facture', 'id' => $obj->fk_facture, 'ref' => $obj->facture_ref);
+			}
+			if (!empty($obj->po_type) && !empty($obj->po_id)) {
+				$ref = ($obj->po_type == 'Commande') ? $obj->commande_ref
+					: (($obj->po_type == 'Propal') ? $obj->propal_ref : '');
+				$l[$obj->rowid]->objects[$obj->po_type.':'.$obj->po_id] =
+					array('type' => $obj->po_type, 'id' => $obj->po_id, 'ref' => $ref);
+			}
+		}
+
+		if ($limit > 0 && count($l) > $limit)
+			$l = array_slice($l, 0, $limit, true);
+
+		return $l;
+	}
+
 	public static function payment_invoices($id)
 	{
 		if (!is_numeric($id))
@@ -371,15 +436,24 @@ class mmi_payments
 		if (empty($infos['date'])) {
 			$infos['date'] = dol_now();
 		}
-		if (is_numeric(strpos($infos['date'], '/'))) {
-			$date_e = explode('/', $infos['date']);
-			$date = implode('-', array_reverse($date_e));
+		// Paiement::datepaye attend un TIMESTAMP. Ne jamais lui passer une chaîne :
+		// Dolibarr la transmet telle quelle à date() (create() -> getNextNumRef() ->
+		// mod_payment_ant -> get_next_value()), ce qui est toléré en PHP 7 (conversion
+		// implicite) mais lève une TypeError fatale à partir de PHP 8.
+		$date = $infos['date'];
+		if (is_numeric($date)) {
+			// Timestamp déjà (dol_now(), ou valeur fournie telle quelle par l'appelant)
+			$date = (int) $date;
 		}
 		else {
-			$date = $infos['date'];
+			// Chaîne : 'JJ/MM/AAAA' (saisie utilisateur) ou date/heure interprétable
+			// ('AAAA-MM-JJ [HH:MM:SS]', ISO 8601 renvoyé par une API...)
+			if (strpos($date, '/') !== false)
+				$date = implode('-', array_reverse(explode('/', $date)));
+			$timestamp = strtotime($date);
+			// Date illisible : on ne crée pas un paiement daté de 1970
+			$date = ($timestamp === false) ? dol_now() : $timestamp;
 		}
-		if (!is_numeric(strpos($date, ' ')))
-			$date .= ' 00:00:00';
 
 		$paiement->datepaye = $date;
 		$paiement->amounts = [];

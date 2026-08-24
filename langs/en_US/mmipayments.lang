@@ -51,3 +51,12 @@ MyPageName = My page name
 #
 MyWidget = My widget
 MyWidgetDescription = My widget description
+
+#
+# "Last payments" block on the Customer tab + dedicated page
+#
+MMIPaymentsLastPayments = Last payments
+MMIPaymentsSeeAll = See all payments
+MMIPaymentsAllPayments = Thirdparty payments
+MMIPaymentsNoPayment = No payment for this thirdparty.
+MMIPaymentsTotalReceived = Total received
