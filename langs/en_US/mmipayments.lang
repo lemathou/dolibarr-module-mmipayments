@@ -60,3 +60,6 @@ MMIPaymentsSeeAll = See all payments
 MMIPaymentsAllPayments = Thirdparty payments
 MMIPaymentsNoPayment = No payment for this thirdparty.
 MMIPaymentsTotalReceived = Total received
+MMIPaymentsTabTitle = Payments
+MMIPaymentsStatusReceived = Received
+MMIPaymentsNoPaymentForObject = No payment or payment attempt.

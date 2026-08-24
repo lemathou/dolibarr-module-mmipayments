@@ -1,5 +1,14 @@
 # CHANGELOG MMIPAYMENTS FOR [DOLIBARR ERP CRM](https://www.dolibarr.org)
 
+## 1.2
+
+- Onglet **Paiements** sur le tiers, le devis, la commande et la facture (`payments.php`) : règlements rattachés à l'objet, tous modes confondus.
+- Nouveau DAO `mmi_payments::object_payments($objecttype, $id, $limit)`, généralisation de `client_payments()` (conservé comme raccourci). Le filtre porte sur l'identifiant du règlement plutôt que sur les jointures : tous les objets rattachés à un règlement retenu sont collectés, et pas seulement celui par lequel on l'a trouvé.
+- **Point d'extension `addPaymentRows`** (contexte `mmipaymentstab`) : un module de paiement contribue ses propres lignes — tentatives échouées, échéanciers, actions de relance —, que le socle fusionne avec les règlements et trie chronologiquement. `llx_paiement` ne contenant que les paiements aboutis, seul le module de paiement connaît les tentatives. Contrat documenté dans le README.
+- Mécanisme d'**enrichissement** (`fk_paiement`) : une transaction connue des deux côtés complète la ligne du règlement au lieu de la dupliquer.
+- Hook `doPaymentTabAction` : le socle ne porte aucune action, chaque module traite les siennes.
+- Suppression de `societe_payments.php`, remplacée par l'onglet ; le lien « voir tous les règlements » du bloc de l'onglet Client y renvoie.
+
 ## 1.1
 
 - Bloc « Derniers règlements » du tiers (tous modes : CB eTransactions, virement, chèque, espèces…) sur l'onglet Client, via le hook `addMoreRecentObjects` (contexte `thirdpartycomm`). Comble l'absence de liste consolidée des règlements d'un tiers en natif Dolibarr.
