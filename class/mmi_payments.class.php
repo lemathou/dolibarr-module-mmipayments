@@ -17,6 +17,37 @@ class mmi_payments
 	const AMOUNT_DIFF_CTS = 3;
 
 	/**
+	 * Statut par défaut de la vue globale des tentatives (mode 'attempts').
+	 *
+	 * 'unsettled' = les tentatives qui ne se sont PAS soldées par un règlement
+	 * lisible ailleurs : refus, et transactions abouties dont le paiement Dolibarr
+	 * manque. C'est le défaut parce que les tentatives ABOUTIES sont, de loin, les
+	 * plus nombreuses : les afficher par défaut noierait la vue et la ferait
+	 * doublonner la liste des règlements, qui les montre déjà.
+	 */
+	const ATTEMPT_STATUS_DEFAULT = 'unsettled';
+
+	/**
+	 * Statuts acceptés par le filtre de la vue globale des tentatives.
+	 *
+	 * Le socle ne sait pas les évaluer — il ne connaît que les règlements aboutis.
+	 * Il définit le vocabulaire, les modules de paiement le traduisent dans leurs
+	 * propres tables (cf. README, § point d'extension).
+	 *
+	 *  - 'unsettled' : refus + abouties sans paiement Dolibarr (défaut)
+	 *  - 'ko'        : refus uniquement
+	 *  - 'missing'   : abouties sans paiement Dolibarr (les régularisations à faire)
+	 *  - 'ok'        : abouties, paiement présent
+	 *  - 'all'       : tout
+	 *
+	 * @return string[]
+	 */
+	public static function attempt_statuses()
+	{
+		return array('unsettled', 'ko', 'missing', 'ok', 'all');
+	}
+
+	/**
 	 * @var DoliDB
 	 */
 	protected static $db;
@@ -547,14 +578,19 @@ class mmi_payments
 	 * Deux modes, parce que les deux natures de données ne se paginent pas pareil :
 	 *  - 'payments'  : les règlements, paginés en SQL (le socle sait faire) ;
 	 *  - 'attempts'  : les tentatives, que seuls les modules de paiement connaissent.
-	 *    Le socle n'a rien à y mettre ; il interroge le hook `addGlobalPaymentRows`
-	 *    (contexte `mmipaymentslist`) et plafonne le résultat, en le signalant.
+	 *    Le socle n'a rien à y mettre : llx_paiement ne contient que des encaissements
+	 *    aboutis. Il interroge le hook `addGlobalPaymentRows` (contexte
+	 *    `mmipaymentslist`) en lui passant statut, limite et offset.
 	 *
-	 * Le mode 'attempts' avec le filtre 'missing_payment' répond à la question qui
-	 * n'avait aucune réponse jusqu'ici : quels encaissements ont abouti côté banque
+	 * Le mode 'attempts' répond aux questions qui n'avaient aucune réponse globale :
+	 * quels paiements ont été refusés, et quels encaissements ont abouti côté banque
 	 * sans que le paiement Dolibarr existe, sur l'ENSEMBLE du parc ?
 	 *
-	 * @param array       $filters     'mode', 'missing_payment', 'socid', 'datefrom', 'dateto', 'limit', 'offset'
+	 * Pagination : un module qui honore limit/offset renvoie `payment_total` (le total
+	 * AVANT pagination) — ses lignes sont alors la page demandée, telles quelles. Un
+	 * module qui l'ignore renvoie tout : on trie et on plafonne ici, en l'annonçant.
+	 *
+	 * @param array       $filters     'mode', 'status', 'socid', 'datefrom', 'dateto', 'limit', 'offset'
 	 * @param HookManager $hookmanager Gestionnaire de hooks (contexte mmipaymentslist initialisé)
 	 * @return array                   array('rows' => …, 'total' => int|null, 'truncated' => bool)
 	 */
@@ -562,26 +598,45 @@ class mmi_payments
 	{
 		global $langs;
 
-		$filters += array('mode' => 'payments', 'missing_payment' => 0, 'socid' => 0,
-			'datefrom' => '', 'dateto' => '', 'limit' => 100, 'offset' => 0);
+		$filters += array('mode' => 'payments', 'status' => self::ATTEMPT_STATUS_DEFAULT,
+			'socid' => 0, 'datefrom' => '', 'dateto' => '', 'limit' => 100, 'offset' => 0);
 		$limit  = max(1, (int) $filters['limit']);
 		$offset = max(0, (int) $filters['offset']);
 
 		if ($filters['mode'] === 'attempts') {
-			// Le mode « tentatives » porte aujourd'hui la question des régularisations :
-			// on le dit explicitement aux modules plutôt que de leur laisser déduire.
-			$filters['missing_payment'] = 1;
+			if (!in_array($filters['status'], self::attempt_statuses(), true)) {
+				$filters['status'] = self::ATTEMPT_STATUS_DEFAULT;
+			}
+			// Compat : les modules écrits pour le contrat 1.4 ne lisent que ce drapeau.
+			$filters['missing_payment'] = ($filters['status'] === 'missing') ? 1 : 0;
+
 			$rows = array();
-			$truncated = false;
+			$total = null;
 			if (is_object($hookmanager)) {
 				$parameters = array('filters' => $filters);
 				$dummy = new stdClass();
 				$action = '';
 				$reshook = $hookmanager->executeHooks('addGlobalPaymentRows', $parameters, $dummy, $action);
-				if ($reshook >= 0 && !empty($hookmanager->resArray['payment_rows'])) {
-					$rows = $hookmanager->resArray['payment_rows'];
+				if ($reshook >= 0) {
+					if (!empty($hookmanager->resArray['payment_rows'])) {
+						$rows = $hookmanager->resArray['payment_rows'];
+					}
+					// Le total se lit même quand la page est vide : demander une page
+					// au-delà de la fin ne veut pas dire qu'il n'y a rien à compter.
+					if (isset($hookmanager->resArray['payment_total'])) {
+						$total = (int) $hookmanager->resArray['payment_total'];
+					}
 				}
 			}
+
+			if ($total !== null) {
+				// Le module a paginé lui-même : ses lignes SONT la page demandée et
+				// son total est exact. Re-trancher ici les casserait.
+				return array('rows' => $rows, 'total' => $total, 'truncated' => false);
+			}
+
+			// Repli : module qui ignore limit/offset. On trie et on plafonne, en le
+			// disant — un plafond qui ne se voit pas se lit comme une liste complète.
 			uasort($rows, function ($a, $b) {
 				$da = isset($a['date']) ? $a['date'] : 0;
 				$db = isset($b['date']) ? $b['date'] : 0;
@@ -591,6 +646,7 @@ class mmi_payments
 				return ($da > $db) ? -1 : 1;
 			});
 			$total = count($rows);
+			$truncated = false;
 			if ($total > $limit) {
 				$rows = array_slice($rows, 0, $limit, true);
 				$truncated = true;	// jamais silencieux : la vue l'affiche
