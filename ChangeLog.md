@@ -1,5 +1,15 @@
 # CHANGELOG MMIPAYMENTS FOR [DOLIBARR ERP CRM](https://www.dolibarr.org)
 
+## 1.5
+
+- **Vue « Tentatives » dans la liste globale** (menu Facturation → Paiements) : les tentatives de paiement, tous tiers confondus, filtrables par statut — refus, régularisations à faire, abouties, ou tout. Jusqu'ici un refus CB ne se voyait qu'en ouvrant la fiche du document concerné ; rien ne les remontait à l'échelle du parc.
+- Le bouton « Paiements à recréer » n'est plus un mode distinct : c'est la vue « Tentatives » préfiltrée sur `missing`. Une vue de travail, pas une nature de donnée de plus.
+- **Pagination réparée**, mode « Règlements » compris : `print_barre_liste()` n'affiche la navigation que si le nombre de lignes reçues dépasse la limite (convention du coeur : demander `limit + 1`). La liste s'arrêtait donc à la première page **sans le moindre lien vers la suivante** — 12 750 règlements dont 200 atteignables.
+- Les filtres tiers et période survivent au changement de page et au changement de mode : sans eux, la page 2 d'une recherche filtrée renvoyait la page 2 de tout, sans rien signaler.
+- Demander une page au-delà de la fin (après un filtrage qui réduit le résultat) ramène à la première page au lieu d'afficher une liste vide, comme les listes du coeur.
+- Le point d'extension `addGlobalPaymentRows` accepte désormais la **pagination déléguée** : un module qui honore `limit`/`offset` renvoie `payment_total` et ses lignes sont prises telles quelles. Sans ce champ, le socle retombe sur l'ancien comportement (tri et plafonnement annoncés) — les deux sens de compatibilité sont préservés.
+- Le titre de la page et l'entrée de menu s'appelaient « Règlements du tiers », libellé hérité du bloc de la fiche tiers et trompeur sur une liste qui est justement globale.
+
 ## 1.4
 
 - L'onglet « Paiements » d'un devis, d'une commande ou d'une facture montre désormais les règlements de **tout le cycle** devis / commande / facture, et plus du seul document ouvert. Un acompte encaissé sur le devis et le solde réglé sur la facture concernent la même affaire : ne montrer que le document ouvert répondait faux à « ce client a-t-il payé ? ». Même périmètre que le bloc paiements de la fiche devis (`mmi_payments::paiements()`) — vérifié identique sur 12 devis.
