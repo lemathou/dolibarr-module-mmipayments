@@ -311,7 +311,11 @@ class modMMIPayments extends DolibarrModules
 			'titre'    => 'MMIPaymentsAllPayments',
 			'mainmenu' => 'billing',
 			'leftmenu' => 'mmipayments_list',
-			'url'      => '/mmipayments/list.php',
+			// Le chemin part de htdocs/ : un module sous custom/ doit donc porter ce prefixe,
+			// sinon Dolibarr construit un lien vers htdocs/mmipayments/list.php, qui n'existe
+			// pas — l'entree de menu apparait et mene a un 404. Les autres modules maison
+			// declarent bien '/custom/<module>/...'.
+			'url'      => '/custom/mmipayments/list.php',
 			'langs'    => 'mmipayments@mmipayments',
 			'position' => 1000 + $r,
 			'enabled'  => '$conf->mmipayments->enabled',
