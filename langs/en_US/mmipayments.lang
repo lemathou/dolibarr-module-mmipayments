@@ -75,3 +75,7 @@ MMIPaymentsNoModuleProvidesAttempts = No installed payment module provides payme
 MMIPaymentsListTruncated = List capped at the first %s rows out of %s. Narrow the search to see the others.
 MMIPaymentsAttachedElsewhere = other document
 MMIPaymentsAttachedElsewhereHelp = This payment belongs to the same quote / order / invoice cycle, but is not attached to the document being displayed.
+MMIPaymentsArea = MMI Payments
+MMIPaymentsHome = Home
+MMIPaymentsHomeIntro = Overview of payments and payment attempts on proposals, orders and invoices.
+MMIPaymentsHomeLinks = Quick links

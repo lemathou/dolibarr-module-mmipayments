@@ -95,3 +95,7 @@ MMIPaymentsAttachedElsewhereHelp = Ce règlement appartient au même cycle devis
 AmountAlreadyPaid=Montant déjà réglé
 PaymentPropalRef=Paiement Proposition %s
 PropalPaid=Proposition commerciale déjà réglée
+MMIPaymentsArea = Paiements MMI
+MMIPaymentsHome = Accueil
+MMIPaymentsHomeIntro = Vue d'ensemble des règlements et tentatives de paiement sur devis, commandes et factures.
+MMIPaymentsHomeLinks = Accès rapides

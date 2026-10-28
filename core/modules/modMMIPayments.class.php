@@ -300,6 +300,22 @@ class modMMIPayments extends DolibarrModules
 		// Main menu entries to add
 		$this->menu = array();
 		$r = 0;
+		// Accueil du module
+		$this->menu[$r++] = array(
+			'fk_menu'  => 'fk_mainmenu=billing,fk_leftmenu=customers_bills_payment',
+			'type'     => 'left',
+			'titre'    => 'MMIPaymentsHome',
+			'mainmenu' => 'billing',
+			'leftmenu' => 'mmipayments_home',
+			'url'      => '/custom/mmipayments/mmipaymentsindex.php',
+			'langs'    => 'mmipayments@mmipayments',
+			'position' => 1000 + $r,
+			'enabled'  => '$conf->mmipayments->enabled',
+			'perms'    => '$user->rights->facture->lire',
+			'target'   => '',
+			'user'     => 0,
+		);
+
 		// Entrée sous Facturation → Règlements : la liste globale des règlements et,
 		// surtout, la vue des paiements à recréer — jusqu'ici introuvable autrement
 		// qu'en ouvrant les fiches une par une.
