@@ -80,7 +80,9 @@ class mmi_payments
 		if (!isset($object))
 			return;
 
-		$object->fetch($id);
+		if ($object->fetch($id) <= 0) {
+			return null;
+		}
 		$object->fetch_thirdparty();
 		return $object;
 	}
