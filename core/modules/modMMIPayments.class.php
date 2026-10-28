@@ -72,7 +72,7 @@ class modMMIPayments extends DolibarrModules
 		$this->editor_url = 'https://iprospective.fr';
 
 		// Possible values for version are: 'development', 'experimental', 'dolibarr', 'dolibarr_deprecated' or a version string like 'x.y.z'
-		$this->version = '1.0';
+		$this->version = '1.5';
 		// Url to the file with your last numberversion of this module
 		//$this->url_last_version = 'http://www.example.com/versionmodule.txt';
 
@@ -125,6 +125,7 @@ class modMMIPayments extends DolibarrModules
 				'ordercard',
 				'propalcard',
 				'newpayment',
+				'thirdpartycomm',
 			),
 			// Set this to 1 if features of module are opened to external users
 			'moduleforexternal' => 0,
@@ -178,6 +179,14 @@ class modMMIPayments extends DolibarrModules
 
 		// Array to add new pages in new tabs
 		$this->tabs = array();
+		// Onglet « Paiements » : règlements ET tentatives de paiement, sur les quatre
+		// objets où la question se pose. Le socle liste les règlements ; les modules de
+		// paiement complètent chaque vue via le hook addPaymentRows (contexte
+		// mmipaymentstab) — cf. mmi_payments::payment_rows().
+		$this->tabs[] = array('data' => 'thirdparty:+mmipayments:MMIPaymentsTabTitle:mmipayments@mmipayments:$conf->mmipayments->enabled && $user->rights->societe->lire:/mmipayments/payments.php?objecttype=Client&id=__ID__');
+		$this->tabs[] = array('data' => 'propal:+mmipayments:MMIPaymentsTabTitle:mmipayments@mmipayments:$conf->mmipayments->enabled && $user->rights->propal->lire:/mmipayments/payments.php?objecttype=Propal&id=__ID__');
+		$this->tabs[] = array('data' => 'order:+mmipayments:MMIPaymentsTabTitle:mmipayments@mmipayments:$conf->mmipayments->enabled && $user->rights->commande->lire:/mmipayments/payments.php?objecttype=Commande&id=__ID__');
+		$this->tabs[] = array('data' => 'invoice:+mmipayments:MMIPaymentsTabTitle:mmipayments@mmipayments:$conf->mmipayments->enabled && $user->rights->facture->lire:/mmipayments/payments.php?objecttype=Facture&id=__ID__');
 		// Example:
 		// $this->tabs[] = array('data'=>'objecttype:+tabname1:Title1:mylangfile@mmipayments:$user->rights->mmipayments->read:/mmipayments/mynewtab1.php?id=__ID__');  					// To add a new tab identified by code tabname1
 		// $this->tabs[] = array('data'=>'objecttype:+tabname2:SUBSTITUTION_Title2:mylangfile@mmipayments:$user->rights->othermodule->read:/mmipayments/mynewtab2.php?id=__ID__',  	// To add another new tab identified by code tabname2. Label will be result of calling all substitution functions on 'Title2' key.
@@ -291,6 +300,29 @@ class modMMIPayments extends DolibarrModules
 		// Main menu entries to add
 		$this->menu = array();
 		$r = 0;
+		// Entrée sous Facturation → Règlements : la liste globale des règlements et,
+		// surtout, la vue des paiements à recréer — jusqu'ici introuvable autrement
+		// qu'en ouvrant les fiches une par une.
+		$this->menu[$r++] = array(
+			// Sous « Règlements » du menu Facturation. Dolibarr rattache par le couple
+			// fk_mainmenu / fk_leftmenu (fk_menu vaut alors -1, c'est normal).
+			'fk_menu'  => 'fk_mainmenu=billing,fk_leftmenu=customers_bills_payment',
+			'type'     => 'left',
+			'titre'    => 'MMIPaymentsAllPayments',
+			'mainmenu' => 'billing',
+			'leftmenu' => 'mmipayments_list',
+			// Le chemin part de htdocs/ : un module sous custom/ doit donc porter ce prefixe,
+			// sinon Dolibarr construit un lien vers htdocs/mmipayments/list.php, qui n'existe
+			// pas — l'entree de menu apparait et mene a un 404. Les autres modules maison
+			// declarent bien '/custom/<module>/...'.
+			'url'      => '/custom/mmipayments/list.php',
+			'langs'    => 'mmipayments@mmipayments',
+			'position' => 1000 + $r,
+			'enabled'  => '$conf->mmipayments->enabled',
+			'perms'    => '$user->rights->facture->lire',
+			'target'   => '',
+			'user'     => 0,
+		);
 		// Add here entries to declare new menus
 		/* BEGIN MODULEBUILDER TOPMENU
 		$this->menu[$r++] = array(
