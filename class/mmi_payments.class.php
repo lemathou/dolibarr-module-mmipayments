@@ -10,6 +10,7 @@ require_once DOL_DOCUMENT_ROOT.'/societe/class/societe.class.php';
 require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';
 require_once DOL_DOCUMENT_ROOT.'/commande/class/commande.class.php';
 require_once DOL_DOCUMENT_ROOT.'/comm/propal/class/propal.class.php';
+require_once __DIR__.'/mmi_payments_label.class.php';
 
 class mmi_payments
 {
@@ -530,15 +531,13 @@ class mmi_payments
 	public static function mode_label($p)
 	{
 		global $langs;
-		if (empty($p->mode_code)) {
-			return $p->mode_label ? $p->mode_label : '';
-		}
-		$key = 'PaymentType'.$p->mode_code;
-		$label = $langs->trans($key);
-		if ($label != $key) {
-			return $label;
-		}
-		return $p->mode_label ? $p->mode_label : $p->mode_code;
+		return mmi_payments_label::resolve(
+			isset($p->mode_code) ? $p->mode_code : null,
+			isset($p->mode_label) ? $p->mode_label : null,
+			function ($key) use ($langs) {
+				return $langs->trans($key);
+			}
+		);
 	}
 
 	/**
