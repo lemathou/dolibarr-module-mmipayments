@@ -20,13 +20,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 
 		// Réglement
 		if ($this->in_context($parameters, 'paymentcard')) {
-			if (false) {
-				echo '<div style="text-align: left">';
-				$client = $object->thirdparty;
-				var_dump($client);
-				var_dump($object);
-			}
-
 			return 0;
 		}
 
@@ -102,7 +95,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 
 		if ($this->in_context($parameters, 'invoicecard')) {
 
-			//var_dump($object);
 			if (in_array($object->type, [Facture::TYPE_STANDARD, Facture::TYPE_DEPOSIT])) {
 				mmi_payments::invoice_autoassign_payments($object);
 			}
@@ -133,7 +125,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			mmi_payments::invoice_autoassign_payments($object, true);
 		}
 		if ($this->in_context($parameters, ['propalcard', 'ordercard']) && $action=='confirm_payment_add') {
-			//var_dump($_POST);
 			$infos = [
 				'date' => GETPOST('datepayment', 'date'),
 				'amount' => GETPOST('amount', 'alphanohtml'),
@@ -144,7 +135,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 				'chqemetteur' => GETPOST('chqemetteur', 'alphanohtml'),
 				'chqbank' => GETPOST('chqbank', 'alphanohtml'),
 			];
-			//var_dump($infos);
 			$object_class = get_class($object);
 			$paiement_id = mmi_payments::add($object_class, $object->id, $infos);
 			if (!empty($paiement_id) && $object_class=='Commande') {
@@ -184,7 +174,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 			// Comptes
 			$accounts = $form->select_comptes($conf->global->MMIPAYMENTS_DEFAULT_ACCOUNT, 'accountid', 0, '', 2, '', 0, '', 1);
 
-			//var_dump($object->thirdparty);
 
 			$formquestion = array(
 				array('type' => 'date', 'name' => 'datepayment', 'label' => '<span class="fieldrequired">'.$langs->trans("Date").'</span>', 'value'=>date('Y-m-d')),
@@ -241,7 +230,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		print '</tr>';
 		print '</thead>';
 		$l = mmi_payments::paiements(get_class($object), $object->id);
-		//var_dump($l);
 		print '<tbody>';
 
 		$total = $object->total_ttc;
@@ -475,15 +463,12 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	{
 		global $db, $langs, $conf, $mysoc;
 
-		// var_dump($object);
 		// die();
 		$time = time();
 
 		$objecttype = get_class($object);
 		$deja = mmi_payments::total_regle($objecttype, $object->id);
-		//var_dump($deja);
 		$reste = ($deja>0 ?max(0, round($object->total_ttc-$deja, 2)) :$object->total_ttc);
-		//var_dump($object->fin_validite, $time, empty($object->fin_validite) || $object->fin_validite < $time);
 
 		if($conf->global->MMIPAYMENTS_CGV_VOILE) {
 			print '<div id="cgi_voile">';
@@ -509,7 +494,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 				echo '<p>'.$nok_message.'</p>';
 			}
 			echo '</div>';
-			//var_dump($object); die();
 			echo '<div id="voile" class="voile"></div>';
 			echo '</div>';
 		}
@@ -534,7 +518,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 
 		// Chèque
 		if ($conf->global->MMIPAYMENTS_CHEQUE_ENABLED) {
-			//var_dump($mysoc);
 			echo '<div class="button buttonpayment" id="div_dopayment_cheque" data-pos="99">
 			<input class="" type="submit" id="dopayment_cheque" name="dopayment_cheque" value="'.$langs->trans('MMIPaymentsDoPaymentCheque').'" />';
 			echo '<div class="pay_infos">'
@@ -595,7 +578,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	{
 		global $conf;
 
-		//var_dump($parameters); var_dump(get_class($object)); var_dump($action);
 		$parameters['validpaymentmethod']['cheque'] = $conf->global->MMIPAYMENTS_CHEQUE_ENABLED;
 		$parameters['validpaymentmethod']['transfer'] = $conf->global->MMIPAYMENTS_TRANSFER_ENABLED;
 
@@ -607,7 +589,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	{
 		global $conf;
 
-		//var_dump($parameters); var_dump(get_class($object)); var_dump($action);
 		$this->results['validpaymentmethod']['cheque'] = $conf->global->MMIPAYMENTS_CHEQUE_ENABLED;
 		$this->results['validpaymentmethod']['transfer'] = $conf->global->MMIPAYMENTS_TRANSFER_ENABLED;
 
@@ -618,7 +599,6 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 	function doPayment($parameters, &$object, &$action, $hookmanager)
 	{
 		global $db, $conf, $mysoc, $user;
-		//var_dump($mysoc); die();
 		//echo $parameters['paymentmethod'];
 
 		// If we are in a validpaymentmethod context, we only return the valid payment methods
@@ -658,13 +638,11 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		else
 			$otype = $object_class;
 
-		//var_dump($parameters);
 		if ($parameters['paymentmethod']=='transfer') {
 			if ($conf->global->PAYMENTBYBANKTRANSFER_ID_BANKACCOUNT) {
 				mmi_etransactions::object_mode_reglement_set($object, 'VIR');
 				$account = new account($db);
 				$account->fetch($conf->global->PAYMENTBYBANKTRANSFER_ID_BANKACCOUNT);
-				//var_dump($account);
 				$title = '<h2 class="title" style="margin-top: 0;">Vous avez choisi de payer par virement</h2>';
 				$info = '<p>Votre demande a bien été prise en considération.</p>
 				<p>Merci de nous envoyer votre paiement par virement bancaire,</p>

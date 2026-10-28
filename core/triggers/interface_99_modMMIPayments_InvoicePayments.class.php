@@ -74,7 +74,6 @@ class InterfaceInvoicePayments extends DolibarrTriggers
 		require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';
 
 		switch($action) {
-			//var_dump($action); var_dump($object);
 			case 'BILL_CREATE':
 			case 'BILL_MODIFY':
 			case 'BILL_VALIDATE':
@@ -85,7 +84,6 @@ class InterfaceInvoicePayments extends DolibarrTriggers
 					$commande = new Commande($db);
 					$commande->fetch($object->linked_objects['commande']);
 					$commande->fetchObjectLinked();
-					//var_dump($commande->linkedObjectsIds);
 					// Si commande depuis un/des devis
 					if (!empty($commande->linkedObjectsIds['propal'])) {
 						// => Associer le(s) devis
@@ -94,7 +92,6 @@ class InterfaceInvoicePayments extends DolibarrTriggers
 					}
 				}
 				//$object->fetchObjectLinked();
-				//var_dump($object); $db->rollback(); die();
 				break;
 
 
@@ -112,7 +109,6 @@ class InterfaceInvoicePayments extends DolibarrTriggers
 					$formMargin = new FormMargin($this->db);
 					if (array_key_exists('commande', $invoice->linkedObjects) && count($invoice->linkedObjects['commande']) > 0) {
 
-						//var_dump($object->pa_ht );
 						foreach ($invoice->linkedObjects['commande'] as $order) {
 							$marginInfos = $formMargin->getMarginInfosArray($order);
 
