@@ -129,7 +129,6 @@ class mmi_payments
 			//echo '<p>'.$sql.'</p>';
 			$resql = static::$db->query($sql);
 			while ($obj = static::$db->fetch_object($resql)) {
-				//var_dump($obj);
 				if ($obj->targettype=='facture')
 					$sql_where[] = "(pf.`fk_facture`='".$obj->fk_target."')";
 				else
@@ -142,7 +141,6 @@ class mmi_payments
 			//echo '<p>'.$sql.'</p>';
 			$resql = static::$db->query($sql);
 			while ($obj = static::$db->fetch_object($resql)) {
-				//var_dump($obj);
 				if ($obj->targettype=='facture')
 					$sql_where[] = "(pf.`fk_facture`='".$obj->fk_source."')";
 				else
@@ -168,10 +166,8 @@ class mmi_payments
 			return;
 		$l = [];
 		while ($obj = static::$db->fetch_object($resql)) {
-			//var_dump($obj);
 			$l[$obj->rowid] = $obj;
 		}
-		//var_dump($l);
 
 		//LEFT JOIN ".MAIN_DB_PREFIX."mbi_etransactions_return mr ON
 		//LEFT JOIN ".MAIN_DB_PREFIX."mbi_etransactions_hash mh ON mh.rowid=mr.fk_mbi_etransactions
@@ -760,7 +756,6 @@ class mmi_payments
 	public static function invoice_autoassign_payments_from_object($object)
 	{
 		$object->fetchObjectLinked();
-		//var_dump($object->linkedObjectsIds);
 		if(!empty($object->linkedObjectsIds) && !empty($object->linkedObjectsIds['facture']) && count($object->linkedObjectsIds['facture'])==1) {
 			foreach($object->linkedObjectsIds['facture'] as $invoice_id) {
 				$invoice = new Facture(static::$db);
@@ -800,7 +795,6 @@ class mmi_payments
 		$linked_objects = [];
 
 		$object->fetchObjectLinked();
-		//var_dump($object->linkedObjectsIds);
 		if(!empty($object->linkedObjectsIds)) {
 			foreach($object->linkedObjectsIds as $type=>$ids)
 				foreach($ids as $id)
@@ -816,7 +810,6 @@ class mmi_payments
 				.' FROM '.MAIN_DB_PREFIX.'paiement_facture pi'
 				.' WHERE pi.fk_facture = '.$object->id;
 			$resql = static::$db->query($sql);
-			//var_dump($resql);
 			// d'un montant total <= cette facture
 			if ($resql && static::$db->num_rows($resql)) {
 				list($amount) = $resql->fetch_row();
@@ -824,7 +817,6 @@ class mmi_payments
 			else {
 				$amount = 0;
 			}
-			//var_dump($amount); die();
 
 			$sql_linked_objects = [];
 			foreach($linked_objects as $row)
@@ -843,7 +835,6 @@ class mmi_payments
 				.' ORDER BY po.amount DESC';
 			//echo '<p>'.$sql.'</p>';
 			$resql = static::$db->query($sql);
-			//var_dump($resql);
 			// d'un montant total <= cette facture
 			if ($resql && static::$db->num_rows($resql)) {
 				//$object->fetch_thirdparty(); // inutile déjà fait
@@ -884,7 +875,6 @@ class mmi_payments
 					$paiement->amounts = $paiement->getAmountsArray();
 					$paiement->multicurrency_amounts = $paiement->amounts;
 					$paiement->paiementid = ($paiement->type_code ?$paiement->type_code :'OTHER');
-					//var_dump($paiement);
 
 					$label = ($objp->amount>0 ?'(CustomerInvoicePayment)' :'(CustomerInvoicePaymentBack)');
 
@@ -893,7 +883,6 @@ class mmi_payments
 					//echo $sql;
 					$q = static::$db->query($sql);
 					if ($q && ($row = $q->fetch_object())) {
-						//var_dump($row);
 						$account_id = $row->fk_bank_account;
 						$chqemetteur = $row->chqemetteur;
 						$chqbank = $row->chqbank;
@@ -907,7 +896,6 @@ class mmi_payments
 						$chqbank = '';
 
 					$result = $paiement->addPaymentToBank($user, 'payment', $label, $account_id, $chqemetteur, $chqbank);
-					//var_dump($result);
 				}
 
 				// Check if we set invoice payed
@@ -916,11 +904,9 @@ class mmi_payments
 					WHERE ip.fk_facture='.$object->id;
 				$q2 = static::$db->query($sql);
 				if ($q2 && ($row = $q2->fetch_object())) {
-					//var_dump($row->paid, $object->total_ttc);
 					// @todo : voir côté doli standard en prenant en compte les avoirs, etc.
 					//   une méthode existe déjà voir dans paiement::create
 					if (round($row->paid-$object->total_ttc, 2) == 0) {
-						//var_dump($object);
 						$object->setPaid($user);
 					}
 				}
@@ -975,12 +961,10 @@ class mmi_payments
 
 		if (!($paiement_id = $paiement->create($user))) {
 			// @todo Notify
-			var_dump($paiement_id);
+			dol_syslog(__METHOD__.' : échec de création du paiement (id='.((int) $paiement_id).')', LOG_ERR);
 			echo 'Erreur création paiement';
 			return;
 		}
-		//var_dump($paiement_id);
-		//var_dump($paiement);
 
 		$object = static::loadobject($objecttype, $id);
 
@@ -1038,7 +1022,6 @@ class mmi_payments
 			$paiement->amounts = $paiement->getAmountsArray();
 			$paiement->multicurrency_amounts = $paiement->amounts;
 			$paiement->paiementid = ($paiement->type_code ?$paiement->type_code :'OTHER');
-			//var_dump($paiement);
 
 			$label = ($paiement->amount>0 ?'(CustomerInvoicePayment)' :'(CustomerInvoicePaymentBack)');
 			$account_id = $infos['accountid'];
