@@ -17,6 +17,37 @@ class mmi_payments
 	const AMOUNT_DIFF_CTS = 3;
 
 	/**
+	 * Statut par défaut de la vue globale des tentatives (mode 'attempts').
+	 *
+	 * 'unsettled' = les tentatives qui ne se sont PAS soldées par un règlement
+	 * lisible ailleurs : refus, et transactions abouties dont le paiement Dolibarr
+	 * manque. C'est le défaut parce que les tentatives ABOUTIES sont, de loin, les
+	 * plus nombreuses : les afficher par défaut noierait la vue et la ferait
+	 * doublonner la liste des règlements, qui les montre déjà.
+	 */
+	const ATTEMPT_STATUS_DEFAULT = 'unsettled';
+
+	/**
+	 * Statuts acceptés par le filtre de la vue globale des tentatives.
+	 *
+	 * Le socle ne sait pas les évaluer — il ne connaît que les règlements aboutis.
+	 * Il définit le vocabulaire, les modules de paiement le traduisent dans leurs
+	 * propres tables (cf. README, § point d'extension).
+	 *
+	 *  - 'unsettled' : refus + abouties sans paiement Dolibarr (défaut)
+	 *  - 'ko'        : refus uniquement
+	 *  - 'missing'   : abouties sans paiement Dolibarr (les régularisations à faire)
+	 *  - 'ok'        : abouties, paiement présent
+	 *  - 'all'       : tout
+	 *
+	 * @return string[]
+	 */
+	public static function attempt_statuses()
+	{
+		return array('unsettled', 'ko', 'missing', 'ok', 'all');
+	}
+
+	/**
 	 * @var DoliDB
 	 */
 	protected static $db;
@@ -156,6 +187,549 @@ class mmi_payments
 			$regle += round($paiement->amount, 2);
 		}
 		return $regle;
+	}
+
+	/**
+	 * Liste des règlements (tous modes) reçus d'un tiers.
+	 *
+	 * Conservé pour les appelants historiques (bloc « Derniers règlements » de
+	 * l'onglet Client) : simple raccourci sur object_payments().
+	 *
+	 * @param int $socid  Id du tiers
+	 * @param int $limit  Nombre max de règlements retournés (0 = pas de limite)
+	 * @return array      cf. object_payments()
+	 */
+	public static function client_payments($socid, $limit = 0)
+	{
+		return static::object_payments('Client', $socid, $limit);
+	}
+
+	/**
+	 * Objets du CYCLE de vente auquel appartient un objet : devis, commande(s) et
+	 * facture(s) qui se répondent.
+	 *
+	 * Le règlement d'une affaire ne se lit pas au niveau d'un seul document : un
+	 * acompte est encaissé sur le devis, le solde sur la facture, et l'un comme
+	 * l'autre concernent la même affaire. Regarder l'onglet Paiements d'un devis sans
+	 * voir ce qui a été réglé sur la facture qui en découle donnerait une réponse
+	 * fausse à « ce client a-t-il payé ? ».
+	 *
+	 * Les liens de llx_element_element se parcourent dans les DEUX sens : selon la
+	 * façon dont les documents ont été créés, la facture est tantôt la cible du devis,
+	 * tantôt sa source.
+	 *
+	 * @param string $objecttype 'Facture' | 'Commande' | 'Propal'
+	 * @param int    $id         Id de l'objet
+	 * @return array             Couples array('type' => …, 'id' => …), objet de départ inclus
+	 */
+	public static function cycle_objects($objecttype, $id)
+	{
+		$id = (int) $id;
+		$map = array('propal' => 'Propal', 'commande' => 'Commande', 'facture' => 'Facture');
+		if (!in_array($objecttype, $map)) {
+			return array();
+		}
+
+		$cycle = array($objecttype.':'.$id => array('type' => $objecttype, 'id' => $id));
+		$todo = array($objecttype.':'.$id => array('type' => $objecttype, 'id' => $id));
+
+		// Parcours transitif borné : depuis une facture, on veut retrouver le devis
+		// dont elle découle ET les factures sœurs issues du même devis. Un seul niveau
+		// rendrait la vue asymétrique — le devis verrait tout, la facture presque rien.
+		// Deux sauts suffisent à couvrir devis <-> commande <-> facture ; la borne
+		// évite de dériver dans un graphe de liens qui peut être large.
+		$MAX_DEPTH = 2;
+		$MAX_OBJECTS = 50;
+
+		for ($depth = 0; $depth < $MAX_DEPTH && $todo && count($cycle) < $MAX_OBJECTS; $depth++) {
+			$conds = array();
+			foreach ($todo as $o) {
+				$lower = array_search($o['type'], $map);
+				$conds[] = "(sourcetype = '".static::$db->escape($lower)."' AND fk_source = ".((int) $o['id']).")";
+				$conds[] = "(targettype = '".static::$db->escape($lower)."' AND fk_target = ".((int) $o['id']).")";
+			}
+			$sql = "SELECT sourcetype AS s_type, fk_source AS s_id, targettype AS t_type, fk_target AS t_id
+				FROM ".MAIN_DB_PREFIX."element_element
+				WHERE ".implode(' OR ', $conds);
+
+			$resql = static::$db->query($sql);
+			if (!$resql) {
+				break;
+			}
+			$todo = array();
+			while ($obj = static::$db->fetch_object($resql)) {
+				// element_element mêle expéditions, commandes fournisseur… : on ne garde
+				// que les documents qui portent des règlements.
+				foreach (array(array($obj->s_type, $obj->s_id), array($obj->t_type, $obj->t_id)) as $cand) {
+					$t = strtolower($cand[0]);
+					if (!isset($map[$t])) {
+						continue;
+					}
+					$k = $map[$t].':'.((int) $cand[1]);
+					if (isset($cycle[$k])) {
+						continue;
+					}
+					$cycle[$k] = array('type' => $map[$t], 'id' => (int) $cand[1]);
+					$todo[$k] = $cycle[$k];
+					if (count($cycle) >= $MAX_OBJECTS) {
+						return $cycle;
+					}
+				}
+			}
+		}
+
+		return $cycle;
+	}
+
+	/**
+	 * Liste des règlements (tous modes) rattachés à un objet métier.
+	 *
+	 * Agrège les paiements liés aux factures (paiement_facture) et aux
+	 * commandes / devis / tiers (paiement_object). Un même règlement peut être
+	 * lié à plusieurs objets (ex: acompte sur commande puis rattaché à la
+	 * facture) : ces objets sont collectés dans $obj->objects, dédupliqués, et
+	 * le règlement n'apparaît qu'une fois.
+	 *
+	 * Le filtre porte sur l'IDENTIFIANT DU RÈGLEMENT (sous-requête), pas sur les
+	 * jointures : on récupère ainsi TOUS les objets rattachés à chaque règlement
+	 * retenu, et pas seulement celui par lequel on l'a trouvé.
+	 *
+	 * @param string $objecttype 'Client' | 'Facture' | 'Commande' | 'Propal'
+	 * @param int    $id         Id de l'objet
+	 * @param int    $limit      Nombre max de règlements retournés (0 = pas de limite)
+	 * @return array             Tableau d'objets paiement indexé par rowid, trié du + récent au + ancien.
+	 *                           Chaque objet porte ->objects : array de array('type','id','ref').
+	 */
+	public static function object_payments($objecttype, $id, $limit = 0)
+	{
+		$id = (int) $id;
+		if ($id <= 0)
+			return array();
+
+		$p = MAIN_DB_PREFIX;
+		switch ($objecttype) {
+			case 'Client':
+			case 'Societe':
+				// Règlements du tiers : via ses factures, ses commandes/devis,
+				// ou rattachés directement au tiers.
+				$filter = "SELECT pf2.fk_paiement FROM ".$p."paiement_facture pf2
+						INNER JOIN ".$p."facture f2 ON f2.rowid = pf2.fk_facture
+						WHERE f2.fk_soc = ".$id."
+					UNION
+					SELECT po2.fk_paiement FROM ".$p."paiement_object po2
+						LEFT JOIN ".$p."commande c2 ON po2.objecttype = 'Commande' AND c2.rowid = po2.fk_object
+						LEFT JOIN ".$p."propal pr2 ON po2.objecttype = 'Propal' AND pr2.rowid = po2.fk_object
+						WHERE c2.fk_soc = ".$id."
+							OR pr2.fk_soc = ".$id."
+							OR (po2.objecttype = 'Client' AND po2.fk_object = ".$id.")";
+				break;
+			case 'Facture':
+			case 'Commande':
+			case 'Propal':
+				// Tout le cycle devis / commande / facture, pas le seul document ouvert :
+				// un acompte encaissé sur le devis et le solde réglé sur la facture
+				// concernent la même affaire (cf. cycle_objects()).
+				$parts = array();
+				foreach (static::cycle_objects($objecttype, $id) as $o) {
+					if ($o['type'] === 'Facture') {
+						$parts[] = "SELECT pf2.fk_paiement FROM ".$p."paiement_facture pf2
+							WHERE pf2.fk_facture = ".((int) $o['id']);
+					} else {
+						$parts[] = "SELECT po2.fk_paiement FROM ".$p."paiement_object po2
+							WHERE po2.objecttype = '".static::$db->escape($o['type'])."' AND po2.fk_object = ".((int) $o['id']);
+					}
+				}
+				$filter = implode(" UNION ", $parts);
+				break;
+			default:
+				return array();
+		}
+
+		$sql = "SELECT p.rowid, p.ref, p.datep, p.datec, p.amount, p.num_paiement, p.note,
+				p.fk_paiement AS fk_mode, cp.code AS mode_code, cp.libelle AS mode_label,
+				pf.fk_facture, f.ref AS facture_ref,
+				po.objecttype AS po_type, po.fk_object AS po_id,
+				c.ref AS commande_ref, pr.ref AS propal_ref
+			FROM ".MAIN_DB_PREFIX."paiement p
+			LEFT JOIN ".MAIN_DB_PREFIX."c_paiement cp ON cp.id = p.fk_paiement
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_facture pf ON pf.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."facture f ON f.rowid = pf.fk_facture
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_object po ON po.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."commande c ON po.objecttype = 'Commande' AND c.rowid = po.fk_object
+			LEFT JOIN ".MAIN_DB_PREFIX."propal pr ON po.objecttype = 'Propal' AND pr.rowid = po.fk_object
+			WHERE p.entity IN (".getEntity('facture').")
+				AND p.rowid IN (".$filter.")
+			ORDER BY p.datep DESC, p.rowid DESC";
+
+		$resql = static::$db->query($sql);
+		if (!$resql)
+			return array();
+
+		$l = array();
+		while ($obj = static::$db->fetch_object($resql)) {
+			if (!isset($l[$obj->rowid])) {
+				$obj->objects = array();
+				$l[$obj->rowid] = $obj;
+			}
+			// Collecte (dédupliquée) des objets métier rattachés à ce règlement
+			if (!empty($obj->fk_facture)) {
+				$l[$obj->rowid]->objects['Facture:'.$obj->fk_facture] =
+					array('type' => 'Facture', 'id' => $obj->fk_facture, 'ref' => $obj->facture_ref);
+			}
+			if (!empty($obj->po_type) && !empty($obj->po_id)) {
+				$ref = ($obj->po_type == 'Commande') ? $obj->commande_ref
+					: (($obj->po_type == 'Propal') ? $obj->propal_ref : '');
+				$l[$obj->rowid]->objects[$obj->po_type.':'.$obj->po_id] =
+					array('type' => $obj->po_type, 'id' => $obj->po_id, 'ref' => $ref);
+			}
+		}
+
+		if ($limit > 0 && count($l) > $limit)
+			$l = array_slice($l, 0, $limit, true);
+
+		return $l;
+	}
+
+	/**
+	 * Lignes de l'onglet « Paiements » : règlements du socle + apports des modules
+	 * de paiement, fusionnés et triés du plus récent au plus ancien.
+	 *
+	 * POINT D'EXTENSION — hook `addPaymentRows`, contexte `mmipaymentstab`.
+	 *
+	 * Un module de paiement remplit $this->results['payment_rows'] avec un tableau
+	 * de lignes. Chaque ligne est un tableau associatif :
+	 *
+	 *   'date'       (int, requis)  timestamp, sert au tri chronologique
+	 *   'amount'     (float)        montant
+	 *   'ref'        (string)       HTML — référence, généralement un lien
+	 *   'objects'    (string)       HTML — objets métier rattachés
+	 *   'mode'       (string)       HTML — libellé du moyen de paiement
+	 *   'status'     (string)       HTML — état (badge, motif de refus en infobulle…)
+	 *   'actions'    (string)       HTML — actions proposées (formulaire POST)
+	 *   'is_payment' (bool)         true = encaissement réel (compte dans le total),
+	 *                               false = tentative sans suite (affichée en retrait)
+	 *   'fk_paiement'(int, option.) ENRICHISSEMENT : si la ligne se rapporte à un
+	 *                               règlement déjà listé par le socle, indiquer son id
+	 *                               plutôt que d'ajouter une ligne. Les champs fournis
+	 *                               COMPLÈTENT la ligne existante (typiquement 'mode',
+	 *                               'status' et 'actions' précisés par le module) au
+	 *                               lieu de la dupliquer.
+	 *
+	 * Sans ce mécanisme d'enrichissement, une transaction aboutie apparaîtrait deux
+	 * fois : une fois comme règlement (vu du socle) et une fois comme tentative
+	 * réussie (vu du module).
+	 *
+	 * L'ordre d'exécution entre modules se règle par la propriété `priority` de leur
+	 * classe d'actions (défaut Dolibarr : 50 ; plus grand = plus tard).
+	 *
+	 * @param string      $objecttype  'Client' | 'Facture' | 'Commande' | 'Propal'
+	 * @param int         $id          Id de l'objet porteur
+	 * @param HookManager $hookmanager Gestionnaire de hooks de la page (contexte déjà initialisé)
+	 * @return array                   Lignes prêtes à l'affichage, triées par date décroissante
+	 */
+	public static function payment_rows($objecttype, $id, $hookmanager = null)
+	{
+		global $langs, $conf;
+
+		$rows = array();
+		$index = array();	// fk_paiement -> clé dans $rows, pour l'enrichissement
+
+		foreach (static::object_payments($objecttype, $id, 0) as $p) {
+			$key = 'payment:'.$p->rowid;
+			// Le règlement remonté par le cycle peut être rattaché à un AUTRE document
+			// (typiquement : réglé sur la facture alors qu'on regarde le devis). Le
+			// masquer serait faux, l'afficher sans le dire le serait tout autant.
+			$attached = static::attachment_note($objecttype, $id, $p->objects);
+			$rows[$key] = array(
+				'date'       => static::$db->jdate($p->datep),
+				'amount'     => (float) $p->amount,
+				'ref'        => '<a href="'.DOL_URL_ROOT.'/compta/paiement/card.php?id='.$p->rowid.'">'
+					.img_picto('', 'payment', 'class="paddingright"')
+					.dol_escape_htmltag($p->ref ? $p->ref : '#'.$p->rowid).'</a>',
+				'objects'    => static::render_linked_objects($p->objects).$attached,
+				'mode'       => dol_escape_htmltag(static::mode_label($p))
+					.(!empty($p->num_paiement) ? ' <span class="opacitymedium small">('.dol_escape_htmltag($p->num_paiement).')</span>' : ''),
+				'status'     => '<span class="badge badge-status4 badge-status">'.$langs->trans("MMIPaymentsStatusReceived").'</span>',
+				'actions'    => '',
+				'is_payment' => true,
+			);
+			$index[(int) $p->rowid] = $key;
+		}
+
+		// Apports des modules de paiement (tentatives, échecs, échéanciers, actions).
+		// On leur transmet le CYCLE déjà résolu : sans lui, ils filtreraient sur le seul
+		// document ouvert et l'onglet deviendrait incohérent — les règlements de la
+		// facture liée s'afficheraient, mais pas les tentatives CB de cette facture.
+		if (is_object($hookmanager)) {
+			$parameters = array(
+				'objecttype' => $objecttype,
+				'id'         => (int) $id,
+				'cycle'      => static::cycle_objects($objecttype, $id),
+			);
+			$dummy = new stdClass();
+			$action = '';
+			$reshook = $hookmanager->executeHooks('addPaymentRows', $parameters, $dummy, $action);
+			if ($reshook >= 0 && !empty($hookmanager->resArray['payment_rows'])) {
+				foreach ($hookmanager->resArray['payment_rows'] as $i => $row) {
+					$fk = !empty($row['fk_paiement']) ? (int) $row['fk_paiement'] : 0;
+					if ($fk && isset($index[$fk])) {
+						// Enrichissement d'un règlement déjà listé : pas de doublon
+						foreach (array('mode', 'status', 'actions', 'objects', 'ref') as $f) {
+							if (isset($row[$f]) && $row[$f] !== '') {
+								$rows[$index[$fk]][$f] = $row[$f];
+							}
+						}
+						continue;
+					}
+					$row += array('date' => 0, 'amount' => 0, 'ref' => '', 'objects' => '',
+						'mode' => '', 'status' => '', 'actions' => '', 'is_payment' => false);
+					$rows['hook:'.$i] = $row;
+				}
+			}
+		}
+
+		uasort($rows, function ($a, $b) {
+			if ($a['date'] == $b['date']) {
+				return 0;
+			}
+			return ($a['date'] > $b['date']) ? -1 : 1;
+		});
+
+		return $rows;
+	}
+
+	/**
+	 * Mention à accoler à un règlement remonté par le cycle mais NON rattaché au
+	 * document ouvert — « réglé sur FA2504-000545 » quand on regarde le devis.
+	 *
+	 * Silencieux quand le règlement porte bien sur le document courant : la mention
+	 * ne doit attirer l'œil que là où elle apprend quelque chose.
+	 *
+	 * @param string $objecttype Type du document ouvert
+	 * @param int    $id         Id du document ouvert
+	 * @param array  $objects    Objets rattachés au règlement
+	 */
+	public static function attachment_note($objecttype, $id, $objects)
+	{
+		global $langs;
+
+		if (empty($objects)) {
+			return '';
+		}
+		if (isset($objects[$objecttype.':'.((int) $id)])) {
+			return '';	// rattaché au document ouvert : rien à signaler
+		}
+
+		// Les documents porteurs sont déjà affichés dans la colonne : les répéter
+		// ferait du bruit. Le marqueur ne dit que ce qu'elle ne dit pas — que ce
+		// règlement ne porte pas sur le document ouvert.
+		return ' <span class="badge badge-status1 badge-status" title="'
+			.dol_escape_htmltag($langs->trans('MMIPaymentsAttachedElsewhereHelp')).'">'
+			.dol_escape_htmltag($langs->trans('MMIPaymentsAttachedElsewhere')).'</span>';
+	}
+
+	/**
+	 * Libellé traduit d'un mode de règlement (repli sur le libellé de c_paiement).
+	 */
+	public static function mode_label($p)
+	{
+		global $langs;
+		if (empty($p->mode_code)) {
+			return $p->mode_label ? $p->mode_label : '';
+		}
+		$key = 'PaymentType'.$p->mode_code;
+		$label = $langs->trans($key);
+		if ($label != $key) {
+			return $label;
+		}
+		return $p->mode_label ? $p->mode_label : $p->mode_code;
+	}
+
+	/**
+	 * Rendu HTML des objets métier (facture / commande / devis) liés à un règlement.
+	 *
+	 * @param array $objects  array de array('type','id','ref')
+	 */
+	public static function render_linked_objects($objects)
+	{
+		if (empty($objects)) {
+			return '<span class="opacitymedium">-</span>';
+		}
+		$links = array();
+		foreach ($objects as $o) {
+			$url = '';
+			if ($o['type'] == 'Facture') {
+				$url = DOL_URL_ROOT.'/compta/facture/card.php?id='.$o['id'];
+			} elseif ($o['type'] == 'Commande') {
+				$url = DOL_URL_ROOT.'/commande/card.php?id='.$o['id'];
+			} elseif ($o['type'] == 'Propal') {
+				$url = DOL_URL_ROOT.'/comm/propal/card.php?id='.$o['id'];
+			}
+			$label = dol_escape_htmltag($o['ref'] ? $o['ref'] : $o['type'].' #'.$o['id']);
+			$links[] = $url ? '<a href="'.$url.'">'.$label.'</a>' : $label;
+		}
+		return implode(', ', $links);
+	}
+
+	/**
+	 * Vue GLOBALE : règlements de tous les tiers, et tentatives de paiement quand
+	 * les modules en fournissent. Alimente la liste `list.php`.
+	 *
+	 * Deux modes, parce que les deux natures de données ne se paginent pas pareil :
+	 *  - 'payments'  : les règlements, paginés en SQL (le socle sait faire) ;
+	 *  - 'attempts'  : les tentatives, que seuls les modules de paiement connaissent.
+	 *    Le socle n'a rien à y mettre : llx_paiement ne contient que des encaissements
+	 *    aboutis. Il interroge le hook `addGlobalPaymentRows` (contexte
+	 *    `mmipaymentslist`) en lui passant statut, limite et offset.
+	 *
+	 * Le mode 'attempts' répond aux questions qui n'avaient aucune réponse globale :
+	 * quels paiements ont été refusés, et quels encaissements ont abouti côté banque
+	 * sans que le paiement Dolibarr existe, sur l'ENSEMBLE du parc ?
+	 *
+	 * Pagination : un module qui honore limit/offset renvoie `payment_total` (le total
+	 * AVANT pagination) — ses lignes sont alors la page demandée, telles quelles. Un
+	 * module qui l'ignore renvoie tout : on trie et on plafonne ici, en l'annonçant.
+	 *
+	 * @param array       $filters     'mode', 'status', 'socid', 'datefrom', 'dateto', 'limit', 'offset'
+	 * @param HookManager $hookmanager Gestionnaire de hooks (contexte mmipaymentslist initialisé)
+	 * @return array                   array('rows' => …, 'total' => int|null, 'truncated' => bool)
+	 */
+	public static function global_payment_rows($filters = array(), $hookmanager = null)
+	{
+		global $langs;
+
+		$filters += array('mode' => 'payments', 'status' => self::ATTEMPT_STATUS_DEFAULT,
+			'socid' => 0, 'datefrom' => '', 'dateto' => '', 'limit' => 100, 'offset' => 0);
+		$limit  = max(1, (int) $filters['limit']);
+		$offset = max(0, (int) $filters['offset']);
+
+		if ($filters['mode'] === 'attempts') {
+			if (!in_array($filters['status'], self::attempt_statuses(), true)) {
+				$filters['status'] = self::ATTEMPT_STATUS_DEFAULT;
+			}
+			// Compat : les modules écrits pour le contrat 1.4 ne lisent que ce drapeau.
+			$filters['missing_payment'] = ($filters['status'] === 'missing') ? 1 : 0;
+
+			$rows = array();
+			$total = null;
+			if (is_object($hookmanager)) {
+				$parameters = array('filters' => $filters);
+				$dummy = new stdClass();
+				$action = '';
+				$reshook = $hookmanager->executeHooks('addGlobalPaymentRows', $parameters, $dummy, $action);
+				if ($reshook >= 0) {
+					if (!empty($hookmanager->resArray['payment_rows'])) {
+						$rows = $hookmanager->resArray['payment_rows'];
+					}
+					// Le total se lit même quand la page est vide : demander une page
+					// au-delà de la fin ne veut pas dire qu'il n'y a rien à compter.
+					if (isset($hookmanager->resArray['payment_total'])) {
+						$total = (int) $hookmanager->resArray['payment_total'];
+					}
+				}
+			}
+
+			if ($total !== null) {
+				// Le module a paginé lui-même : ses lignes SONT la page demandée et
+				// son total est exact. Re-trancher ici les casserait.
+				return array('rows' => $rows, 'total' => $total, 'truncated' => false);
+			}
+
+			// Repli : module qui ignore limit/offset. On trie et on plafonne, en le
+			// disant — un plafond qui ne se voit pas se lit comme une liste complète.
+			uasort($rows, function ($a, $b) {
+				$da = isset($a['date']) ? $a['date'] : 0;
+				$db = isset($b['date']) ? $b['date'] : 0;
+				if ($da == $db) {
+					return 0;
+				}
+				return ($da > $db) ? -1 : 1;
+			});
+			$total = count($rows);
+			$truncated = false;
+			if ($total > $limit) {
+				$rows = array_slice($rows, 0, $limit, true);
+				$truncated = true;	// jamais silencieux : la vue l'affiche
+			}
+			return array('rows' => $rows, 'total' => $total, 'truncated' => $truncated);
+		}
+
+		// Mode 'payments' : règlements, paginés en SQL
+		$where = "p.entity IN (".getEntity('facture').")";
+		if (!empty($filters['socid'])) {
+			$where .= " AND (f.fk_soc = ".(int) $filters['socid']
+				." OR c.fk_soc = ".(int) $filters['socid']
+				." OR pr.fk_soc = ".(int) $filters['socid'].")";
+		}
+		if (!empty($filters['datefrom'])) {
+			$where .= " AND p.datep >= '".static::$db->idate($filters['datefrom'])."'";
+		}
+		if (!empty($filters['dateto'])) {
+			$where .= " AND p.datep <= '".static::$db->idate($filters['dateto'])."'";
+		}
+
+		$from = " FROM ".MAIN_DB_PREFIX."paiement p
+			LEFT JOIN ".MAIN_DB_PREFIX."c_paiement cp ON cp.id = p.fk_paiement
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_facture pf ON pf.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."facture f ON f.rowid = pf.fk_facture
+			LEFT JOIN ".MAIN_DB_PREFIX."paiement_object po ON po.fk_paiement = p.rowid
+			LEFT JOIN ".MAIN_DB_PREFIX."commande c ON po.objecttype = 'Commande' AND c.rowid = po.fk_object
+			LEFT JOIN ".MAIN_DB_PREFIX."propal pr ON po.objecttype = 'Propal' AND pr.rowid = po.fk_object
+			WHERE ".$where;
+
+		$total = null;
+		$resql = static::$db->query("SELECT COUNT(DISTINCT p.rowid) AS nb".$from);
+		if ($resql && ($o = static::$db->fetch_object($resql))) {
+			$total = (int) $o->nb;
+		}
+
+		$sql = "SELECT DISTINCT p.rowid, p.ref, p.datep, p.amount, p.num_paiement,
+				p.fk_paiement AS fk_mode, cp.code AS mode_code, cp.libelle AS mode_label,
+				COALESCE(f.fk_soc, c.fk_soc, pr.fk_soc) AS socid"
+			.$from
+			." ORDER BY p.datep DESC, p.rowid DESC"
+			.static::$db->plimit($limit, $offset);
+
+		$rows = array();
+		$resql = static::$db->query($sql);
+		if ($resql) {
+			while ($obj = static::$db->fetch_object($resql)) {
+				$obj->objects = array();
+				$rows['payment:'.$obj->rowid] = $obj;
+			}
+		}
+
+		// Objets métier rattachés, en une requête pour tout le lot (pas de N+1)
+		if ($rows) {
+			$ids = array();
+			foreach ($rows as $r) {
+				$ids[] = (int) $r->rowid;
+			}
+			$idlist = implode(',', $ids);
+			$sql2 = "SELECT pf.fk_paiement, 'Facture' AS objecttype, f.rowid AS fk_object, f.ref
+					FROM ".MAIN_DB_PREFIX."paiement_facture pf
+					INNER JOIN ".MAIN_DB_PREFIX."facture f ON f.rowid = pf.fk_facture
+					WHERE pf.fk_paiement IN (".$idlist.")
+				UNION ALL
+				SELECT po.fk_paiement, po.objecttype, po.fk_object,
+					COALESCE(c.ref, pr.ref) AS ref
+					FROM ".MAIN_DB_PREFIX."paiement_object po
+					LEFT JOIN ".MAIN_DB_PREFIX."commande c ON po.objecttype = 'Commande' AND c.rowid = po.fk_object
+					LEFT JOIN ".MAIN_DB_PREFIX."propal pr ON po.objecttype = 'Propal' AND pr.rowid = po.fk_object
+					WHERE po.fk_paiement IN (".$idlist.")";
+			$resql2 = static::$db->query($sql2);
+			if ($resql2) {
+				while ($o = static::$db->fetch_object($resql2)) {
+					$k = 'payment:'.$o->fk_paiement;
+					if (isset($rows[$k])) {
+						$rows[$k]->objects[$o->objecttype.':'.$o->fk_object] =
+							array('type' => $o->objecttype, 'id' => $o->fk_object, 'ref' => $o->ref);
+					}
+				}
+			}
+		}
+
+		return array('rows' => $rows, 'total' => $total, 'truncated' => false);
 	}
 
 	public static function payment_invoices($id)
@@ -371,15 +945,24 @@ class mmi_payments
 		if (empty($infos['date'])) {
 			$infos['date'] = dol_now();
 		}
-		if (is_numeric(strpos($infos['date'], '/'))) {
-			$date_e = explode('/', $infos['date']);
-			$date = implode('-', array_reverse($date_e));
+		// Paiement::datepaye attend un TIMESTAMP. Ne jamais lui passer une chaîne :
+		// Dolibarr la transmet telle quelle à date() (create() -> getNextNumRef() ->
+		// mod_payment_ant -> get_next_value()), ce qui est toléré en PHP 7 (conversion
+		// implicite) mais lève une TypeError fatale à partir de PHP 8.
+		$date = $infos['date'];
+		if (is_numeric($date)) {
+			// Timestamp déjà (dol_now(), ou valeur fournie telle quelle par l'appelant)
+			$date = (int) $date;
 		}
 		else {
-			$date = $infos['date'];
+			// Chaîne : 'JJ/MM/AAAA' (saisie utilisateur) ou date/heure interprétable
+			// ('AAAA-MM-JJ [HH:MM:SS]', ISO 8601 renvoyé par une API...)
+			if (strpos($date, '/') !== false)
+				$date = implode('-', array_reverse(explode('/', $date)));
+			$timestamp = strtotime($date);
+			// Date illisible : on ne crée pas un paiement daté de 1970
+			$date = ($timestamp === false) ? dol_now() : $timestamp;
 		}
-		if (!is_numeric(strpos($date, ' ')))
-			$date .= ' 00:00:00';
 
 		$paiement->datepaye = $date;
 		$paiement->amounts = [];

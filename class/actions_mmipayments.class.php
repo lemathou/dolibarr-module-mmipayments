@@ -329,6 +329,115 @@ class ActionsMMIPayments extends MMI_Actions_1_0
 		return 0;
 	}
 
+	/**
+	 * Hook onglet Client (comm/card.php, contexte thirdpartycomm) :
+	 * bloc « Derniers règlements » du tiers, tous modes confondus
+	 * (CB eTransactions, virement, chèque, espèces…), avec lien « voir tout ».
+	 * Comble l'absence de liste consolidée des règlements d'un tiers en natif Dolibarr.
+	 */
+	function addMoreRecentObjects($parameters, &$object, &$action, $hookmanager)
+	{
+		global $langs, $conf, $user;
+
+		if (!$this->in_context($parameters, 'thirdpartycomm'))
+			return 0;
+		if (empty($object->id) || !$user->hasRight('societe', 'lire'))
+			return 0;
+
+		$langs->loadLangs(array('mmipayments@mmipayments', 'compta', 'bills', 'banks', 'other'));
+
+		$max = 10;
+		$payments = mmi_payments::client_payments($object->id, $max + 1);
+		// Tiers sans règlement : on n'affiche rien (pas de bruit sur la fiche)
+		if (empty($payments))
+			return 0;
+		$hasmore = (count($payments) > $max);
+		if ($hasmore)
+			$payments = array_slice($payments, 0, $max, true);
+
+		// Vue complète : l'onglet « Paiements », qui agrège règlements et tentatives
+		// de tous les moyens de paiement (RM2803).
+		$listurl = dol_buildpath('/mmipayments/payments.php', 1).'?objecttype=Client&id='.$object->id;
+
+		$out = '';
+		$out .= '<div class="div-table-responsive-no-min">';
+		$out .= '<table class="noborder centpercent">';
+
+		$out .= '<tr class="liste_titre">';
+		$out .= '<td colspan="4">'.$langs->trans('MMIPaymentsLastPayments');
+		$out .= ' <a href="'.$listurl.'" class="marginleftonly">'.$langs->trans('MMIPaymentsSeeAll').'</a>';
+		$out .= '</td>';
+		$out .= '</tr>';
+
+		$out .= '<tr class="liste_titre">';
+		$out .= '<th>'.$langs->trans('Date').'</th>';
+		$out .= '<th>'.$langs->trans('LinkedObject').'</th>';
+		$out .= '<th>'.$langs->trans('PaymentMode').'</th>';
+		$out .= '<th class="right">'.$langs->trans('Amount').'</th>';
+		$out .= '</tr>';
+
+		foreach ($payments as $p) {
+			$out .= '<tr class="oddeven">';
+			$out .= '<td class="nowraponall">'.dol_print_date($this->db->jdate($p->datep), 'day').'</td>';
+			$out .= '<td>'.$this->renderPaymentObjects($p).'</td>';
+			$out .= '<td>'.dol_escape_htmltag($this->paymentModeLabel($p)).'</td>';
+			$out .= '<td class="right nowraponall"><a href="'.DOL_URL_ROOT.'/compta/paiement/card.php?id='.$p->rowid.'">'.price($p->amount, 0, $langs, 1, -1, -1, $conf->currency).'</a></td>';
+			$out .= '</tr>';
+		}
+
+		$out .= '</table>';
+		$out .= '</div>';
+
+		$this->resprints = $out;
+		return 0;
+	}
+
+	/**
+	 * Libellé traduit d'un mode de règlement (fallback sur le libellé c_paiement).
+	 *
+	 * @param object $p  Ligne de règlement (->mode_code, ->mode_label)
+	 * @return string
+	 */
+	protected function paymentModeLabel($p)
+	{
+		global $langs;
+
+		if (empty($p->mode_code))
+			return $p->mode_label ? $p->mode_label : '';
+		$key = 'PaymentType'.$p->mode_code;
+		$label = $langs->trans($key);
+		if ($label != $key)
+			return $label;
+		return $p->mode_label ? $p->mode_label : $p->mode_code;
+	}
+
+	/**
+	 * Rendu HTML des objets métier (facture / commande / devis) liés à un règlement.
+	 *
+	 * @param object $p  Ligne de règlement portant ->objects (array de array('type','id','ref'))
+	 * @return string
+	 */
+	protected function renderPaymentObjects($p)
+	{
+		if (empty($p->objects))
+			return '<span class="opacitymedium">-</span>';
+
+		$links = array();
+		foreach ($p->objects as $o) {
+			$url = '';
+			if ($o['type'] == 'Facture')
+				$url = DOL_URL_ROOT.'/compta/facture/card.php?id='.$o['id'];
+			elseif ($o['type'] == 'Commande')
+				$url = DOL_URL_ROOT.'/commande/card.php?id='.$o['id'];
+			elseif ($o['type'] == 'Propal')
+				$url = DOL_URL_ROOT.'/comm/propal/card.php?id='.$o['id'];
+
+			$label = dol_escape_htmltag($o['ref'] ? $o['ref'] : $o['type'].' #'.$o['id']);
+			$links[] = $url ? '<a href="'.$url.'">'.$label.'</a>' : $label;
+		}
+		return implode(', ', $links);
+	}
+
 	/* Payment means */
 
 	/**
