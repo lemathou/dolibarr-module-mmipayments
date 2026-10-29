@@ -226,3 +226,23 @@ GPLv3 or (at your option) any later version. See file COPYING for more informati
 ### Documentation
 
 All texts and readmes are licensed under GFDL.
+
+## Prérequis
+
+- Dolibarr 20.0 (branche `20.0`).
+- Modules MMI : `mmicommon`. **`mmicommon` doit être activé en premier.**
+- Modules cœur : `Facture`, `Commande`, `Propale`, `Societe`.
+
+## Installation
+
+1. Copier dans `htdocs/custom/mmipayments`.
+2. Activer `mmicommon` puis le module.
+3. Vérifier les droits.
+
+## Licence
+
+GPLv3+ (voir `COPYING`), documentation GFDL.
+
+## Changelog
+
+Voir [CHANGELOG.md](CHANGELOG.md).
